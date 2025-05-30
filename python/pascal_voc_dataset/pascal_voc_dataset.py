@@ -1,13 +1,12 @@
 import os
 from pathlib import Path
 
+import numpy as np
+import torch
 import torchvision.transforms as T
-import torchvision.transforms as transforms
 from pascal_voc_dataset.download_pascal_voc_dataset import download_pascal_voc_2012_dataset
 from PIL import Image
 from torch.utils.data import Dataset
-import numpy as np
-import torch
 
 VOC_COLORMAP = np.array(
     [
@@ -49,18 +48,20 @@ def decode_voc_mask(mask: torch.Tensor) -> np.ndarray:
     rgb_mask[valid] = VOC_COLORMAP[mask[valid]]
     return rgb_mask
 
-class ViTV16Transforms:
 
+class ViTV16Transforms:
     def __init__(self):
         """
         Matching transforms for: https://docs.pytorch.org/vision/main/models/generated/torchvision.models.vit_b_16.html#torchvision.models.ViT_B_16_Weights
         """
-        self.image_transform = T.Compose([
-            T.Resize(256, interpolation=T.InterpolationMode.BILINEAR),
-            T.CenterCrop(224),
-            T.ToTensor(),
-            # T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        self.image_transform = T.Compose(
+            [
+                T.Resize(256, interpolation=T.InterpolationMode.BILINEAR),
+                T.CenterCrop(224),
+                T.ToTensor(),
+                # T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
         self.mask_resize = T.Resize(256, interpolation=T.InterpolationMode.NEAREST)
         self.mask_crop = T.CenterCrop(224)
 
@@ -71,8 +72,9 @@ class ViTV16Transforms:
         mask = Image.fromarray(mask)
         mask = self.mask_resize(mask)
         mask = self.mask_crop(mask)
-        mask = torch.from_numpy(np.array(mask)).long()  
+        mask = torch.from_numpy(np.array(mask)).long()
         return image, mask
+
 
 class PascalVOCDataset(Dataset):
     def __init__(self, root_dir, split="train"):

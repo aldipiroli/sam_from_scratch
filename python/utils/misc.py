@@ -2,12 +2,13 @@ import logging
 import os
 from datetime import datetime
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
-from PIL import Image
-import matplotlib.pyplot as plt
 from pascal_voc_dataset.pascal_voc_dataset import decode_voc_mask
+from PIL import Image
+
 
 def get_device():
     device = torch.device(
@@ -23,7 +24,7 @@ def load_config(path):
 
 def get_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
-    now = datetime.now().strftime("%Y%m%d_%H%M%S") 
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f"log_{now}.log")
     logger = logging.getLogger(f"logger_{now}")
     logger.setLevel(logging.INFO)
@@ -49,7 +50,6 @@ def plot_single_image(tensor, filename):
     img.save(filename)
 
 
-
 def save_image_with_mask(image, mask, filename, alpha=0.5):
     assert image.ndim == 3 and image.shape[0] == 3, "Image must be of shape (3, n, h)"
     assert mask.ndim == 2 and mask.shape == image.shape[1:], "Mask must be of shape (n, h)"
@@ -71,4 +71,3 @@ def save_image_with_mask(image, mask, filename, alpha=0.5):
 
     # Save to file
     plt.imsave(filename, panel)
-
