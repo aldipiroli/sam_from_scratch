@@ -247,7 +247,7 @@ class SAM(nn.Module):
         num_prompts = prompt_tokens.shape
 
         # mask decoder
-        masks, iou = self.mask_decoder(tokens, img_embed, num_prompts)
+        masks, iou = self.mask_decoder(tokens, img_embed)
         return masks, iou
 
 

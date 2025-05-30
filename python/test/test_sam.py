@@ -108,7 +108,7 @@ def test_mask_decoder():
 
     tokens = torch.randn(b, num_prompts + 4, d)
     img_embed = torch.randn(b, n, d)
-    masks, iou = mask_decoder(tokens, img_embed, num_prompts)
+    masks, iou = mask_decoder(tokens, img_embed)
     assert masks.shape == (b, (resulting_patch_size * upscale_factor), (resulting_patch_size * upscale_factor))
     assert iou.shape == (b,)
 
