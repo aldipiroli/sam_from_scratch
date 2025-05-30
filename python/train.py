@@ -1,8 +1,9 @@
-from pascal_voc_dataset.pascal_voc_dataset import PascalVOCDataset
 from model.loss_functions import PixelReconstructionLoss
-from python.model.sam import SAM
+from pascal_voc_dataset.pascal_voc_dataset import PascalVOCDataset
 from utils.misc import get_logger, load_config
 from utils.trainer import Trainer
+
+from python.model.sam import SAM
 
 
 def train():

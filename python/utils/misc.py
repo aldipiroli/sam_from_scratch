@@ -1,11 +1,12 @@
 import logging
 import os
 from datetime import datetime
-import matplotlib.pyplot as plt
+
 import numpy as np
 import torch
 import yaml
 from PIL import Image
+
 
 def get_device():
     device = torch.device(

@@ -1,10 +1,10 @@
 import os
 from pathlib import Path
 
+import torchvision.transforms as T
 from pascal_voc_dataset.download_pascal_voc_dataset import download_pascal_voc_2012_dataset
 from PIL import Image
 from torch.utils.data import Dataset
-import torchvision.transforms as T
 
 
 class SimpleTransform:

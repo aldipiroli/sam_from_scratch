@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 
 def test_tiny_imagenet_dataset():
-    curr_split="train"
+    curr_split = "train"
     for curr_split in ["train", "val"]:
         dataset = PascalVOCDataset(root_dir="../data", split=curr_split)
         batch_size = 8

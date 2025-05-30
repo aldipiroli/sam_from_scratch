@@ -1,7 +1,4 @@
-import torch
 from torchvision.models import vit_b_16
-from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-from PIL import Image
 
 # Load the pretrained ViT-Base model with 16x16 patches from torchvision
 model = vit_b_16(pretrained=True)

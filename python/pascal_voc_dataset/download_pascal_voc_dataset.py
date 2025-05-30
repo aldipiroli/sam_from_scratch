@@ -1,6 +1,7 @@
 import os
-import urllib.request
 import tarfile
+import urllib.request
+
 
 def download_pascal_voc_2012_dataset(destination_dir):
     url = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar"
@@ -24,6 +25,7 @@ def download_pascal_voc_2012_dataset(destination_dir):
         print("Extraction complete.")
     else:
         print("Dataset already extracted.")
+
 
 if __name__ == "__main__":
     download_pascal_voc_2012_dataset("../data")
