@@ -15,26 +15,28 @@ class ViTB16(nn.Module):
         n = x.shape[0]
         batch_class_token = self.model.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
-        x = self.model.encoder(x)  # (b,num_patches,embeds)
+        x = self.model.encoder(x)  # (b,num_patches,embeds) -> (b, 197, 768)
         return x
 
 
 class ImageEncoder(nn.Module):
-    def __init__(self, frozen=True):
+    def __init__(self, frozen=True, original_embed_size=768, target_embed_size=256):
         super(ImageEncoder, self).__init__()
         self.encoder = ViTB16()
         self.frozen = frozen
         self.encoder.eval()
+        self.embed_proj = nn.Linear(original_embed_size, target_embed_size)
 
     def forward(self, x):
         if self.frozen:
             self.encoder.eval()
             with torch.no_grad():
-                out = self.encoder(x)
+                embed = self.encoder(x)
         else:
             self.encoder.train()
-            out = self.encoder(x)
-        return out
+            embed = self.encoder(x)
+        embed = self.embed_proj(embed)
+        return embed
 
 
 class FourierPositionalEncodings(nn.Module):
@@ -57,12 +59,12 @@ class FourierPositionalEncodings(nn.Module):
 class PointPromptEconder(nn.Module):
     def __init__(self, embed_size=256, num_frequencies=4):
         super(PointPromptEconder, self).__init__()
-        size_pos_encode = 2 * 2 * num_frequencies
+        self.size_pos_encode = 2 * 2 * num_frequencies
         self.embed_size = embed_size
 
         self.fourier_pos_encode = FourierPositionalEncodings(num_frequencies)
         self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1))
-        self.embed_projection = nn.Linear(size_pos_encode, embed_size)
+        self.embed_projection = nn.Linear(self.size_pos_encode, embed_size)
 
     def forward(self, x):
         x_pos_encode = self.fourier_pos_encode(x)
@@ -71,24 +73,95 @@ class PointPromptEconder(nn.Module):
         return x_embed
 
 
-class MaskDecoder(nn.Module):
+class SelfAttention(nn.Module):
+    def __init__(self, input_size, out_size):
+        super(SelfAttention, self).__init__()
+        self.input_size = input_size
+        self.out_size = out_size
+        self.project_k = nn.Linear(self.input_size, self.out_size)
+        self.project_q = nn.Linear(self.input_size, self.out_size)
+        self.project_v = nn.Linear(self.input_size, self.out_size)
+
+    def forward(self, in_k, in_q, in_v):
+        k = self.project_k(in_k)
+        q = self.project_k(in_q)
+        v = self.project_k(in_v)
+
+        qk = q @ k.transpose(-2, -1) * (self.out_size**0.5)
+        qk = torch.nn.functional.softmax(qk, -1)
+        attention = qk @ v
+        return attention
+
+
+class MultiheadAttention(nn.Module):
+    def __init__(self, input_size=256, out_size=256, num_heads=2):
+        super(MultiheadAttention, self).__init__()
+        self.input_size = input_size
+        self.out_size = out_size
+        self.num_heads = num_heads
+        head_out_size = int(out_size / num_heads)
+        assert input_size % input_size == 0
+
+        self.attention_heads = [SelfAttention(input_size, head_out_size) for _ in range(num_heads)]
+        self.lin_proj = nn.Linear(self.out_size, self.out_size)
+
+    def forward(self, in_k, in_q, in_v):
+        head_outputs = []
+        for attention_head in self.attention_heads:
+            head_outputs.append(attention_head(in_k, in_q, in_v))
+        head_outputs = torch.cat(head_outputs, -1)
+        head_outputs = self.lin_proj(head_outputs)
+        return head_outputs
+
+
+class MaskDecoderLayer(nn.Module):
     def __init__(self):
-        super(MaskDecoder, self).__init__()
+        super(MaskDecoderLayer, self).__init__()
 
     def forward(self, x):
         return x
 
 
-class SAM(nn.Module):
-    def __init__(self, cfg):
-        super(SAM, self).__init__()
-        self.cfg = cfg
-        self.image_encoder = ImageEncoder(frozen=True)
+class MaskDecoder(nn.Module):
+    def __init__(self, embed_size=256):
+        super(MaskDecoder, self).__init__()
+        self.embed_size = embed_size
+        self.token_self_attention = MultiheadAttention(input_size=embed_size, out_size=embed_size, num_heads=2)
 
-    def forward(self, x):
-        y = self.image_encoder(x)
-        return_dict = {"x": x, "y": y}
-        return return_dict
+    def forward(self, prompt_tokens, img_embed):
+        b, n, d = prompt_tokens.shape
+        tokens = prompt_tokens
+        token_sa = self.token_self_attention(tokens, tokens, tokens)
+        return tokens
+
+
+###########################################
+import debugpy
+
+debugpy.listen(("localhost", 6001))
+print("Waiting for debugger attach...")
+debugpy.wait_for_client()
+
+
+###########################################
+class SAM(nn.Module):
+    def __init__(self, embed_size=256):
+        super(SAM, self).__init__()
+        self.image_encoder = ImageEncoder(frozen=True)
+        self.prompt_encoder = PointPromptEconder(embed_size=embed_size)
+        self.output_token = nn.parameter.Parameter(data=torch.zeros(1))
+        self.proj_prompt_tokens = nn.Linear(embed_size + 1, embed_size)
+
+    def forward(self, img, prompt):
+        img_embed = self.image_encoder(img)
+        b, n, d = img_embed.shape
+
+        prompt_tokens = self.prompt_encoder(prompt)
+        output_token = self.output_token.unsqueeze(-1).unsqueeze(-1).expand(b, n, 1)
+        tokens = torch.cat([output_token, prompt_tokens], -1)
+        tokens = self.proj_prompt_tokens(tokens)
+
+        return {}
 
 
 if __name__ == "__main__":
