@@ -51,6 +51,21 @@ class FourierPositionalEncodings(nn.Module):
         x_pos_encode = x_pos_encode.reshape(b, -1)
         return x_pos_encode
 
+class PointPromptEconder(nn.Module):
+    def __init__(self, embed_size=256, num_frequencies=4):
+        super(PointPromptEconder, self).__init__()
+        size_pos_encode = 2*2*num_frequencies
+        self.embed_size = embed_size
+
+        self.fourier_pos_encode = FourierPositionalEncodings(num_frequencies)
+        self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1))
+        self.embed_projection = nn.Linear(size_pos_encode, embed_size)
+
+    def forward(self, x):
+        x_pos_encode = self.fourier_pos_encode(x)
+        x_embed = self.embed_projection(x_pos_encode)
+        x_embed = x_embed + self.type_embedding 
+        return x_embed
 
 class SAM(nn.Module):
     def __init__(self, cfg):
