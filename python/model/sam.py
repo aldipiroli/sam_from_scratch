@@ -17,7 +17,8 @@ class ViTB16(nn.Module):
         n = x.shape[0]
         batch_class_token = self.model.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
-        x = self.model.encoder(x)  # (b,num_patches,embeds) -> (b, 197, 768)
+        # x = self.model.encoder(x)  # (b,num_patches,embeds) -> (b, 197, 768)
+        x = self.model.encoder(x)[:, 1:, :]  # (b,num_patches,embeds) -> (b, 196, 768) (no cls token)
         return x
 
 
@@ -133,18 +134,9 @@ class MultiheadAttention(nn.Module):
 
 
 class MaskDecoderLayer(nn.Module):
-    def __init__(self):
-        super(MaskDecoderLayer, self).__init__()
-
-    def forward(self, x):
-        return x
-
-
-class MaskDecoderLayer(nn.Module):
-    def __init__(self, embed_size=256, num_output_tokens=4, dropout=0.1):
+    def __init__(self, embed_size=256, dropout=0.1):
         super(MaskDecoderLayer, self).__init__()
         self.embed_size = embed_size
-        self.num_output_tokens = num_output_tokens
 
         self.token_self_attn = MultiheadAttention(embed_size, embed_size)
         self.token_to_img_corss_attn = MultiheadAttention(embed_size, embed_size)
@@ -181,19 +173,51 @@ class MaskDecoderLayer(nn.Module):
 
 
 class MaskDecoder(nn.Module):
-    def __init__(self, num_decoder_layers=2, embed_size=256, num_output_tokens=4, dropout=0.1):
+    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, resulting_patch_size=14):
         super(MaskDecoder, self).__init__()
         self.embed_size = embed_size
-        self.num_output_tokens = num_output_tokens
-        self.decoder_layers = [
-            MaskDecoderLayer(embed_size=256, num_output_tokens=4, dropout=dropout) for _ in range(num_decoder_layers)
-        ]
+        self.resulting_patch_size = resulting_patch_size  # h//patch_size
+        self.decoder_layers = [MaskDecoderLayer(embed_size=256, dropout=dropout) for _ in range(num_decoder_layers)]
+        self.upsample = nn.Sequential(
+            nn.ConvTranspose2d(embed_size, embed_size, kernel_size=2, stride=2),
+            nn.GELU(),
+            nn.ConvTranspose2d(embed_size, embed_size, kernel_size=2, stride=2),
+            nn.GELU(),
+        )  # upsample 4x
+        self.token_to_img_corss_attn = MultiheadAttention(embed_size, embed_size)
+        self.mlp_mask = nn.Sequential(
+            nn.Linear(embed_size, embed_size),
+            nn.GELU(),
+            nn.Linear(embed_size, embed_size),
+            nn.GELU(),
+            nn.Linear(embed_size, embed_size),
+        )
 
-    def forward(self, tokens, img_embed):
+        self.mlp_iou = nn.Sequential(nn.Linear(embed_size, 1))
+
+    def forward(self, tokens, img_embed, num_prompts):
         for curr_decoder in self.decoder_layers:
             tokens, img_embed = curr_decoder(tokens, img_embed)
+        b, n, d = img_embed.shape
 
-        return tokens, img_embed
+        img_embed_reshape = img_embed.permute(0, 2, 1).reshape(
+            b, d, self.resulting_patch_size, self.resulting_patch_size
+        )
+        img_embed_upsample = self.upsample(img_embed_reshape)
+        img_embed_upsample_reshape = img_embed_upsample.reshape(b, d, (self.resulting_patch_size * 4) ** 2)
+
+        token_to_img_res = self.token_to_img_corss_attn(
+            in_k=img_embed,
+            in_q=tokens,
+            in_v=img_embed,
+        )
+        token_to_img_res += tokens
+        mask_token = token_to_img_res[:, 0:1, :]
+        masks = torch.matmul(mask_token, img_embed_upsample_reshape)
+        masks_reshape = masks.reshape(b, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4))
+        iou_token = token_to_img_res[:, 1:2, :]
+        iou = self.mlp_iou(iou_token).squeeze()
+        return masks_reshape, iou
 
 
 class SAM(nn.Module):
@@ -208,7 +232,6 @@ class SAM(nn.Module):
         self.mask_decoder = MaskDecoder(
             num_decoder_layers=num_decoder_layers,
             embed_size=embed_size,
-            num_output_tokens=num_output_tokens,
             dropout=0.1,
         )
 
@@ -221,8 +244,11 @@ class SAM(nn.Module):
         prompt_tokens = self.prompt_encoder(prompt)
         output_token = self.output_token.expand(b, self.num_output_tokens, self.embed_size)
         tokens = torch.cat([output_token, prompt_tokens], 1)
+        num_prompts = prompt_tokens.shape
 
-        return {}
+        masks, iou = self.mask_decoder(tokens, img_embed, num_prompts)
+
+        return masks, iou
 
 
 if __name__ == "__main__":
