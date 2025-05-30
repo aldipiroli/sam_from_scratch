@@ -3,7 +3,7 @@ from pascal_voc_dataset.pascal_voc_dataset import PascalVOCDataset
 from utils.misc import get_logger, load_config
 from utils.trainer import Trainer
 
-from python.model.sam import SAM
+from model.sam import SAM
 
 
 def train():
@@ -15,8 +15,8 @@ def train():
     model = SAM(cfg=config["MODEL"])
     trainer.set_model(model)
 
-    train_dataset = PascalVOCDataset(root=config["DATA"]["root"], split="train")
-    val_dataset = PascalVOCDataset(root=config["DATA"]["root"], split="val")
+    train_dataset = PascalVOCDataset(root_dir=config["DATA"]["root"], split="train")
+    val_dataset = PascalVOCDataset(root_dir=config["DATA"]["root"], split="val")
     trainer.set_dataset(train_dataset, val_dataset, data_config=config["DATA"])
     trainer.set_optimizer(optim_config=config["OPTIM"])
     trainer.set_loss_function(loss_fn=PixelReconstructionLoss())

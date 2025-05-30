@@ -16,10 +16,10 @@ def test_tiny_imagenet_dataset(skip=True):
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
         it = iter(loader)
         images, labels = next(it)
-        assert images.shape == (batch_size, 3, 256, 256)
-        assert labels.shape == (batch_size, 256, 256)
+        assert images.shape == (batch_size, 3, 224, 224)
+        assert labels.shape == (batch_size, 224, 224)
 
 
 if __name__ == "__main__":
-    test_tiny_imagenet_dataset()
+    test_tiny_imagenet_dataset(skip=False)
     print("Tests passed!")
