@@ -9,6 +9,7 @@ from model.sam import (
     FourierPositionalEncodings,
     ImageEncoder,
     MaskDecoder,
+    MaskDecoderLayer,
     MultiheadAttention,
     PointPromptEconder,
     SelfAttention,
@@ -80,17 +81,30 @@ def test_image_encoder():
     assert x_encoded.shape[-1] == target_embed_size
 
 
+def test_mask_decoder_layer():
+    b = 2
+    n = 197
+    d = 256
+    num_prompts = 2
+    mask_decoder_layer = MaskDecoderLayer(embed_size=256, num_output_tokens=4, dropout=0.1)
+
+    tokens = torch.randn(b, num_prompts, d)
+    img_embed = torch.randn(b, n, d)
+    tokens_, img_embed_ = mask_decoder_layer(tokens, img_embed)
+    assert tokens.shape == tokens_.shape
+    assert img_embed.shape == img_embed_.shape
+
+
 def test_mask_decoder():
     b = 2
     n = 197
     d = 256
     num_prompts = 2
-
-    mask_decoder = MaskDecoder()
+    mask_decoder_layer = MaskDecoder(num_decoder_layers=2, embed_size=256, num_output_tokens=4, dropout=0.1)
 
     tokens = torch.randn(b, num_prompts, d)
     img_embed = torch.randn(b, n, d)
-    tokens_, img_embed_ = mask_decoder(tokens, img_embed)
+    tokens_, img_embed_ = mask_decoder_layer(tokens, img_embed)
     assert tokens.shape == tokens_.shape
     assert img_embed.shape == img_embed_.shape
 
@@ -110,6 +124,7 @@ if __name__ == "__main__":
     test_fourier_positional_encoding()
     test_fixed_sinusoidal_positional_encodings()
     test_point_prompt_encoder()
+    test_mask_decoder_layer()
     test_mask_decoder()
     test_image_encoder()
     test_sam()

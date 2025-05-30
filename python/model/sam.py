@@ -140,9 +140,9 @@ class MaskDecoderLayer(nn.Module):
         return x
 
 
-class MaskDecoder(nn.Module):
-    def __init__(self, embed_size=256, num_output_tokens=4):
-        super(MaskDecoder, self).__init__()
+class MaskDecoderLayer(nn.Module):
+    def __init__(self, embed_size=256, num_output_tokens=4, dropout=0.1):
+        super(MaskDecoderLayer, self).__init__()
         self.embed_size = embed_size
         self.num_output_tokens = num_output_tokens
 
@@ -152,6 +152,7 @@ class MaskDecoder(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(embed_size, embed_size),
             nn.GELU(),
+            nn.Dropout(dropout),
             nn.Linear(embed_size, embed_size),
         )
 
@@ -160,11 +161,14 @@ class MaskDecoder(nn.Module):
         fixed_pos_encodings = get_fixed_sin_positional_encodings(batch_size=b, num_patches=n, embed_size=d)
 
         tokens_self_attn = self.token_self_attn(in_k=tokens, in_q=tokens, in_v=tokens)
+        tokens_self_attn += tokens
         token_to_img_res = self.token_to_img_corss_attn(
             in_k=add_positional_embeddings(img_embed, fixed_pos_encodings),
             in_q=tokens_self_attn,
             in_v=add_positional_embeddings(img_embed, fixed_pos_encodings),
         )
+        token_to_img_res += tokens
+
         token_to_img_res_mlp = self.mlp(token_to_img_res)
 
         img_to_token_res = self.img_to_token_cross_attn(
@@ -172,18 +176,41 @@ class MaskDecoder(nn.Module):
             in_q=add_positional_embeddings(img_embed, fixed_pos_encodings),
             in_v=token_to_img_res_mlp,
         )
+        # TODO: add skip connection, layer_norm, and drop out
         return token_to_img_res_mlp, img_to_token_res
 
 
+class MaskDecoder(nn.Module):
+    def __init__(self, num_decoder_layers=2, embed_size=256, num_output_tokens=4, dropout=0.1):
+        super(MaskDecoder, self).__init__()
+        self.embed_size = embed_size
+        self.num_output_tokens = num_output_tokens
+        self.decoder_layers = [
+            MaskDecoderLayer(embed_size=256, num_output_tokens=4, dropout=dropout) for _ in range(num_decoder_layers)
+        ]
+
+    def forward(self, tokens, img_embed):
+        for curr_decoder in self.decoder_layers:
+            tokens, img_embed = curr_decoder(tokens, img_embed)
+
+        return tokens, img_embed
+
+
 class SAM(nn.Module):
-    def __init__(self, embed_size=256, num_output_tokens=4, num_decoders=2):
+    def __init__(self, embed_size=256, num_output_tokens=4, num_decoder_layers=2):
         super(SAM, self).__init__()
         self.embed_size = embed_size
         self.num_output_tokens = num_output_tokens
         self.image_encoder = ImageEncoder(frozen=True)
         self.prompt_encoder = PointPromptEconder(embed_size=embed_size)
         self.output_token = nn.parameter.Parameter(data=torch.zeros(1, num_output_tokens, 1))
-        self.decoder_layers = [MaskDecoder(self.embed_size, num_output_tokens=4) for _ in range(num_decoders)]
+
+        self.mask_decoder = MaskDecoder(
+            num_decoder_layers=num_decoder_layers,
+            embed_size=embed_size,
+            num_output_tokens=num_output_tokens,
+            dropout=0.1,
+        )
 
     def forward(self, img, prompt):
         # img embedding
@@ -194,10 +221,6 @@ class SAM(nn.Module):
         prompt_tokens = self.prompt_encoder(prompt)
         output_token = self.output_token.expand(b, self.num_output_tokens, self.embed_size)
         tokens = torch.cat([output_token, prompt_tokens], 1)
-
-        # mask decoder
-        for curr_decoder in self.decoder_layers:
-            tokens, img_embed = curr_decoder(tokens, img_embed)
 
         return {}
 
