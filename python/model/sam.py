@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision.models import vit_b_16
 
+
 class ViTB16(nn.Module):
     def __init__(self):
         super(ViTB16, self).__init__()
@@ -14,7 +15,7 @@ class ViTB16(nn.Module):
         n = x.shape[0]
         batch_class_token = self.model.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
-        x = self.model.encoder(x) # (b,num_patches,embeds) 
+        x = self.model.encoder(x) # (b,num_patches,embeds)
         return x
 
 class ImageEncoder(nn.Module):
@@ -31,14 +32,31 @@ class ImageEncoder(nn.Module):
                 out = self.encoder(x)
         else:
             self.encoder.train()
-            out = self.encoder(x) 
+            out = self.encoder(x)
         return out
+
+class FourierPositionalEncodings(nn.Module):
+    def __init__(self,num_frequencies=4):
+        super(FourierPositionalEncodings, self).__init__()
+        # https://proceedings.neurips.cc/paper_files/paper/2020/file/55053683268957697aa39fba6f231c68-Paper.pdf
+        self.num_frequencies = num_frequencies
+        self.frequencies = torch.tensor([2**i * torch.pi for i in range(self.num_frequencies)])
+
+    def forward(self, x):
+        b = x.shape[0]
+        x = x.unsqueeze(-1) * self.frequencies
+        sin = torch.sin(x)
+        cos = torch.cos(x)
+        x_pos_encode = torch.cat([sin, cos], -1)
+        x_pos_encode = x_pos_encode.reshape(b, -1)
+        return x_pos_encode
+
 
 class SAM(nn.Module):
     def __init__(self, cfg):
         super(SAM, self).__init__()
         self.cfg = cfg
-        self.image_encoder = ImageEncoder(frozen=True) 
+        self.image_encoder = ImageEncoder(frozen=True)
 
     def forward(self, x):
         y = self.image_encoder(x)
