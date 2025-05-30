@@ -18,14 +18,14 @@ class ViTB16(nn.Module):
         return x
 
 class ImageEncoder(nn.Module):
-    def __init__(self, forzen=True):
+    def __init__(self, frozen=True):
         super(ImageEncoder, self).__init__()
         self.encoder = ViTB16()
-        self.forzen = forzen
+        self.frozen = frozen
         self.encoder.eval()
 
     def forward(self, x):
-        if self.forzen:
+        if self.frozen:
             self.encoder.eval()
             with torch.no_grad():
                 out = self.encoder(x)
@@ -38,7 +38,7 @@ class SAM(nn.Module):
     def __init__(self, cfg):
         super(SAM, self).__init__()
         self.cfg = cfg
-        self.image_encoder = ImageEncoder(forzen=True) 
+        self.image_encoder = ImageEncoder(frozen=True) 
 
     def forward(self, x):
         y = self.image_encoder(x)
