@@ -10,13 +10,14 @@ class ViTB16(nn.Module):
         self.model.eval()
 
     def forward(self, x):
-        # extract feature layer: https://github.com/pytorch/vision/blob/13ada5645a4ca31242c53b3525616e43cb9ba2c7/torchvision/models/vision_transformer.py#L289
+        # extract feature layer: https://github.com/pytorch/vision/blob/13ada5645a4ca31242c53b3525616e43cb9ba2c7/torchvision/models/vision_transformer.py#L289
         x = self.model._process_input(x)
         n = x.shape[0]
         batch_class_token = self.model.class_token.expand(n, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
-        x = self.model.encoder(x) # (b,num_patches,embeds)
+        x = self.model.encoder(x)  # (b,num_patches,embeds)
         return x
+
 
 class ImageEncoder(nn.Module):
     def __init__(self, frozen=True):
@@ -35,10 +36,11 @@ class ImageEncoder(nn.Module):
             out = self.encoder(x)
         return out
 
+
 class FourierPositionalEncodings(nn.Module):
-    def __init__(self,num_frequencies=4):
+    def __init__(self, num_frequencies=4):
         super(FourierPositionalEncodings, self).__init__()
-        # https://proceedings.neurips.cc/paper_files/paper/2020/file/55053683268957697aa39fba6f231c68-Paper.pdf
+        # https://proceedings.neurips.cc/paper_files/paper/2020/file/55053683268957697aa39fba6f231c68-Paper.pdf
         self.num_frequencies = num_frequencies
         self.frequencies = torch.tensor([2**i * torch.pi for i in range(self.num_frequencies)])
 
@@ -51,10 +53,11 @@ class FourierPositionalEncodings(nn.Module):
         x_pos_encode = x_pos_encode.reshape(b, -1)
         return x_pos_encode
 
+
 class PointPromptEconder(nn.Module):
     def __init__(self, embed_size=256, num_frequencies=4):
         super(PointPromptEconder, self).__init__()
-        size_pos_encode = 2*2*num_frequencies
+        size_pos_encode = 2 * 2 * num_frequencies
         self.embed_size = embed_size
 
         self.fourier_pos_encode = FourierPositionalEncodings(num_frequencies)
@@ -64,8 +67,17 @@ class PointPromptEconder(nn.Module):
     def forward(self, x):
         x_pos_encode = self.fourier_pos_encode(x)
         x_embed = self.embed_projection(x_pos_encode)
-        x_embed = x_embed + self.type_embedding 
+        x_embed = x_embed + self.type_embedding
         return x_embed
+
+
+class MaskDecoder(nn.Module):
+    def __init__(self):
+        super(MaskDecoder, self).__init__()
+
+    def forward(self, x):
+        return x
+
 
 class SAM(nn.Module):
     def __init__(self, cfg):
@@ -75,13 +87,12 @@ class SAM(nn.Module):
 
     def forward(self, x):
         y = self.image_encoder(x)
-        return_dict = {"x": x, "y":y}
+        return_dict = {"x": x, "y": y}
         return return_dict
+
 
 if __name__ == "__main__":
     cfg = {}
     model = SAM(cfg)
     x = torch.randn(8, 3, 224, 224)
     out = model(x)
-    print(f"x {out["x"].shape}")
-    print(f"y {out["y"].shape}")
