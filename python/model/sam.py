@@ -195,7 +195,7 @@ class MaskDecoder(nn.Module):
 
         self.mlp_iou = nn.Sequential(nn.Linear(embed_size, 1))
 
-    def forward(self, tokens, img_embed, num_prompts):
+    def forward(self, tokens, img_embed):
         for curr_decoder in self.decoder_layers:
             tokens, img_embed = curr_decoder(tokens, img_embed)
         b, n, d = img_embed.shape
@@ -246,8 +246,8 @@ class SAM(nn.Module):
         tokens = torch.cat([output_token, prompt_tokens], 1)
         num_prompts = prompt_tokens.shape
 
+        # mask decoder
         masks, iou = self.mask_decoder(tokens, img_embed, num_prompts)
-
         return masks, iou
 
 
