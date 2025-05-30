@@ -1,0 +1,14 @@
+CKPT_DIR: "../artifacts/ckpts"
+LOG_DIR: "../artifacts/logs"
+IMG_OUT_DIR: "../artifacts/img"
+MODEL:
+  img_size: [3, 256, 256]
+DATA:
+  root: "../data"
+  batch_size: 64
+OPTIM:
+  optimizer: "Adam"
+  lr: 0.001
+  weight_decay: 0.00001
+  weight_decay_step: 10
+  num_epochs: 100
