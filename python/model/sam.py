@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 from torchvision.models import vit_b_16
@@ -47,13 +49,29 @@ class FourierPositionalEncodings(nn.Module):
         self.frequencies = torch.tensor([2**i * torch.pi for i in range(self.num_frequencies)])
 
     def forward(self, x):
-        b = x.shape[0]
+        b, num_promprs, prompt_dim = x.shape
         x = x.unsqueeze(-1) * self.frequencies
         sin = torch.sin(x)
         cos = torch.cos(x)
         x_pos_encode = torch.cat([sin, cos], -1)
-        x_pos_encode = x_pos_encode.reshape(b, -1)
+        x_pos_encode = x_pos_encode.reshape(b, num_promprs, -1)
         return x_pos_encode
+
+
+def get_fixed_sin_positional_encodings(batch_size, num_patches, embed_size):
+    pos_encodings = torch.zeros(num_patches, embed_size)
+    for pos in range(num_patches):
+        for i in range(embed_size):
+            if i % 2 == 0:
+                pos_encodings[pos, i] = math.sin(pos / 10000 ** (2 * i / embed_size))
+            else:
+                pos_encodings[pos, i] = math.sin(pos / 10000 ** (2 * i / embed_size))
+    pos_encodings = pos_encodings.unsqueeze(0).expand(batch_size, num_patches, embed_size)
+    return pos_encodings
+
+
+def add_positional_embeddings(img_embeddings, pos_embeddings):
+    return img_embeddings + pos_embeddings
 
 
 class PointPromptEconder(nn.Module):
@@ -63,13 +81,13 @@ class PointPromptEconder(nn.Module):
         self.embed_size = embed_size
 
         self.fourier_pos_encode = FourierPositionalEncodings(num_frequencies)
-        self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1))
+        self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1))  # not quite sure
         self.embed_projection = nn.Linear(self.size_pos_encode, embed_size)
 
     def forward(self, x):
         x_pos_encode = self.fourier_pos_encode(x)
         x_embed = self.embed_projection(x_pos_encode)
-        x_embed = x_embed + self.type_embedding
+        x_embed = x_embed + self.type_embedding.expand(self.embed_size)
         return x_embed
 
 
@@ -123,43 +141,63 @@ class MaskDecoderLayer(nn.Module):
 
 
 class MaskDecoder(nn.Module):
-    def __init__(self, embed_size=256):
+    def __init__(self, embed_size=256, num_output_tokens=4):
         super(MaskDecoder, self).__init__()
         self.embed_size = embed_size
-        self.token_self_attention = MultiheadAttention(input_size=embed_size, out_size=embed_size, num_heads=2)
+        self.num_output_tokens = num_output_tokens
 
-    def forward(self, prompt_tokens, img_embed):
-        b, n, d = prompt_tokens.shape
-        tokens = prompt_tokens
-        token_sa = self.token_self_attention(tokens, tokens, tokens)
-        return tokens
+        self.token_self_attn = MultiheadAttention(embed_size, embed_size)
+        self.token_to_img_corss_attn = MultiheadAttention(embed_size, embed_size)
+        self.img_to_token_cross_attn = MultiheadAttention(embed_size, embed_size)
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_size, embed_size),
+            nn.GELU(),
+            nn.Linear(embed_size, embed_size),
+        )
+
+    def forward(self, tokens, img_embed):
+        b, n, d = img_embed.shape
+        fixed_pos_encodings = get_fixed_sin_positional_encodings(batch_size=b, num_patches=n, embed_size=d)
+
+        tokens_self_attn = self.token_self_attn(in_k=tokens, in_q=tokens, in_v=tokens)
+        token_to_img_res = self.token_to_img_corss_attn(
+            in_k=add_positional_embeddings(img_embed, fixed_pos_encodings),
+            in_q=tokens_self_attn,
+            in_v=add_positional_embeddings(img_embed, fixed_pos_encodings),
+        )
+        token_to_img_res_mlp = self.mlp(token_to_img_res)
+
+        img_to_token_res = self.img_to_token_cross_attn(
+            in_k=token_to_img_res_mlp,
+            in_q=add_positional_embeddings(img_embed, fixed_pos_encodings),
+            in_v=token_to_img_res_mlp,
+        )
+        return token_to_img_res_mlp, img_to_token_res
 
 
-###########################################
-import debugpy
-
-debugpy.listen(("localhost", 6001))
-print("Waiting for debugger attach...")
-debugpy.wait_for_client()
-
-
-###########################################
 class SAM(nn.Module):
-    def __init__(self, embed_size=256):
+    def __init__(self, embed_size=256, num_output_tokens=4, num_decoders=2):
         super(SAM, self).__init__()
+        self.embed_size = embed_size
+        self.num_output_tokens = num_output_tokens
         self.image_encoder = ImageEncoder(frozen=True)
         self.prompt_encoder = PointPromptEconder(embed_size=embed_size)
-        self.output_token = nn.parameter.Parameter(data=torch.zeros(1))
-        self.proj_prompt_tokens = nn.Linear(embed_size + 1, embed_size)
+        self.output_token = nn.parameter.Parameter(data=torch.zeros(1, num_output_tokens, 1))
+        self.decoder_layers = [MaskDecoder(self.embed_size, num_output_tokens=4) for _ in range(num_decoders)]
 
     def forward(self, img, prompt):
+        # img embedding
         img_embed = self.image_encoder(img)
         b, n, d = img_embed.shape
 
+        # prompt token embedd + output token
         prompt_tokens = self.prompt_encoder(prompt)
-        output_token = self.output_token.unsqueeze(-1).unsqueeze(-1).expand(b, n, 1)
-        tokens = torch.cat([output_token, prompt_tokens], -1)
-        tokens = self.proj_prompt_tokens(tokens)
+        output_token = self.output_token.expand(b, self.num_output_tokens, self.embed_size)
+        tokens = torch.cat([output_token, prompt_tokens], 1)
+
+        # mask decoder
+        for curr_decoder in self.decoder_layers:
+            tokens, img_embed = curr_decoder(tokens, img_embed)
 
         return {}
 
