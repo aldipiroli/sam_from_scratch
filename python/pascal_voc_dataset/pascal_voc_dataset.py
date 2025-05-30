@@ -2,23 +2,30 @@ import os
 from pathlib import Path
 
 import torchvision.transforms as T
+import torchvision.transforms as transforms
 from pascal_voc_dataset.download_pascal_voc_dataset import download_pascal_voc_2012_dataset
 from PIL import Image
 from torch.utils.data import Dataset
 
 
-class SimpleTransform:
+class ViTV16Transforms:
     def __init__(self, size=(256, 256)):
-        self.image_transform = T.Compose(
+        """
+        Matching transforms for: https://docs.pytorch.org/vision/main/models/generated/torchvision.models.vit_b_16.html#torchvision.models.ViT_B_16_Weights
+        """
+        self.image_transform = transforms.Compose(
             [
-                T.Resize(size),
+                T.Resize(256, interpolation=transforms.InterpolationMode.BILINEAR),
+                T.CenterCrop(224),
                 T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         )
         self.mask_transform = T.Compose(
             [
-                T.Resize(size, interpolation=Image.NEAREST),
-                T.PILToTensor(),
+                T.Resize(256, interpolation=transforms.InterpolationMode.BILINEAR),
+                T.CenterCrop(224),
+                T.ToTensor(),
             ]
         )
 
@@ -36,7 +43,7 @@ class PascalVOCDataset(Dataset):
         """
         self.root_dir = Path(root_dir)
         self.split = split
-        self.transforms = SimpleTransform()
+        self.transforms = ViTV16Transforms()
 
         if not os.path.isdir(self.root_dir / "VOCdevkit/VOC2012"):
             download_pascal_voc_2012_dataset(self.root_dir)
