@@ -154,29 +154,29 @@ class MaskDecoderLayer(nn.Module):
 
         tokens_self_attn = self.token_self_attn(in_k=tokens, in_q=tokens, in_v=tokens)
         tokens_self_attn += tokens
-        token_to_img_res = self.token_to_img_corss_attn(
+        token_to_img_attn = self.token_to_img_corss_attn(
             in_k=add_positional_embeddings(img_embed, fixed_pos_encodings),
             in_q=tokens_self_attn,
             in_v=add_positional_embeddings(img_embed, fixed_pos_encodings),
         )
-        token_to_img_res += tokens
+        token_to_img_attn += tokens
+        token_to_img_attn_mlp = self.mlp(token_to_img_attn)
 
-        token_to_img_res_mlp = self.mlp(token_to_img_res)
-
-        img_to_token_res = self.img_to_token_cross_attn(
-            in_k=token_to_img_res_mlp,
+        img_to_token_attn = self.img_to_token_cross_attn(
+            in_k=token_to_img_attn_mlp,
             in_q=add_positional_embeddings(img_embed, fixed_pos_encodings),
-            in_v=token_to_img_res_mlp,
+            in_v=token_to_img_attn_mlp,
         )
         # TODO: add skip connection, layer_norm, and drop out
-        return token_to_img_res_mlp, img_to_token_res
+        return token_to_img_attn_mlp, img_to_token_attn
 
 
 class MaskDecoder(nn.Module):
-    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, resulting_patch_size=14):
+    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, resulting_patch_size=14, num_output_tokens=4):
         super(MaskDecoder, self).__init__()
         self.embed_size = embed_size
         self.resulting_patch_size = resulting_patch_size  # h//patch_size
+        self.num_output_tokens = num_output_tokens
         self.decoder_layers = [MaskDecoderLayer(embed_size=256, dropout=dropout) for _ in range(num_decoder_layers)]
         self.upsample = nn.Sequential(
             nn.ConvTranspose2d(embed_size, embed_size, kernel_size=2, stride=2),
@@ -201,10 +201,12 @@ class MaskDecoder(nn.Module):
         b, n, d = img_embed.shape
 
         img_embed_reshape = img_embed.permute(0, 2, 1).reshape(
-            b, d, self.resulting_patch_size, self.resulting_patch_size
-        )
+            b, self.embed_size, self.resulting_patch_size, self.resulting_patch_size
+        )  # (b,embed_size, h//patch_size, w//patch_size)
         img_embed_upsample = self.upsample(img_embed_reshape)
-        img_embed_upsample_reshape = img_embed_upsample.reshape(b, d, (self.resulting_patch_size * 4) ** 2)
+        img_embed_upsample_reshape = img_embed_upsample.reshape(
+            b, self.embed_size, (self.resulting_patch_size * 4) ** 2
+        )  # (b,embed_size, h//patch_size * w//patch_size)
 
         token_to_img_res = self.token_to_img_corss_attn(
             in_k=img_embed,
@@ -212,11 +214,14 @@ class MaskDecoder(nn.Module):
             in_v=img_embed,
         )
         token_to_img_res += tokens
-        mask_token = token_to_img_res[:, 0:1, :]
+        mask_token = token_to_img_res[:, : self.num_output_tokens, :]
         masks = torch.matmul(mask_token, img_embed_upsample_reshape)
-        masks_reshape = masks.reshape(b, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4))
-        iou_token = token_to_img_res[:, 1:2, :]
+        masks_reshape = masks.reshape(
+            b, self.num_output_tokens, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4)
+        )
+        iou_token = token_to_img_res[:, : self.num_output_tokens, :]
         iou = self.mlp_iou(iou_token).squeeze()
+        # TODO: handle single/multi prompt cases
         return masks_reshape, iou
 
 
@@ -244,7 +249,6 @@ class SAM(nn.Module):
         prompt_tokens = self.prompt_encoder(prompt)
         output_token = self.output_token.expand(b, self.num_output_tokens, self.embed_size)
         tokens = torch.cat([output_token, prompt_tokens], 1)
-        num_prompts = prompt_tokens.shape
 
         # mask decoder
         masks, iou = self.mask_decoder(tokens, img_embed)

@@ -102,6 +102,7 @@ def test_mask_decoder():
     num_prompts = 2
     resulting_patch_size = 14
     upscale_factor = 4
+    num_output_tokens = 4
     mask_decoder = MaskDecoder(
         num_decoder_layers=2, embed_size=256, dropout=0.1, resulting_patch_size=resulting_patch_size
     )
@@ -109,8 +110,13 @@ def test_mask_decoder():
     tokens = torch.randn(b, num_prompts + 4, d)
     img_embed = torch.randn(b, n, d)
     masks, iou = mask_decoder(tokens, img_embed)
-    assert masks.shape == (b, (resulting_patch_size * upscale_factor), (resulting_patch_size * upscale_factor))
-    assert iou.shape == (b,)
+    assert masks.shape == (
+        b,
+        num_output_tokens,
+        (resulting_patch_size * upscale_factor),
+        (resulting_patch_size * upscale_factor),
+    )
+    assert iou.shape == (b, num_output_tokens)
 
 
 def test_sam():
@@ -119,11 +125,17 @@ def test_sam():
     num_prompts = 2
     resulting_patch_size = 14
     upscale_factor = 4
+    num_output_tokens = 4
     img = torch.randn(b, c, h, w)
     prompt = torch.randint(0, h, size=(b, num_prompts, 2))
     masks, iou = sam(img, prompt)
-    assert masks.shape == (b, (resulting_patch_size * upscale_factor), (resulting_patch_size * upscale_factor))
-    assert iou.shape == (b,)
+    assert masks.shape == (
+        b,
+        num_output_tokens,
+        (resulting_patch_size * upscale_factor),
+        (resulting_patch_size * upscale_factor),
+    )
+    assert iou.shape == (b, num_output_tokens)
 
 
 if __name__ == "__main__":
