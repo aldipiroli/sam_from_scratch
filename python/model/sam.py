@@ -43,7 +43,7 @@ class ImageEncoder(nn.Module):
 
 
 class FourierPositionalEncodings(nn.Module):
-    def __init__(self, num_frequencies=4):
+    def __init__(self, num_frequencies=1):
         super(FourierPositionalEncodings, self).__init__()
         # https://proceedings.neurips.cc/paper_files/paper/2020/file/55053683268957697aa39fba6f231c68-Paper.pdf
         self.num_frequencies = num_frequencies
@@ -82,13 +82,13 @@ class PointPromptEconder(nn.Module):
         self.embed_size = embed_size
 
         self.fourier_pos_encode = FourierPositionalEncodings(num_frequencies)
-        self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1, 1, self.embed_size))  # not quite sure
+        # self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1, 1, self.embed_size))  # not quite sure
         self.embed_projection = nn.Linear(self.size_pos_encode, embed_size)
 
     def forward(self, x):
         x_pos_encode = self.fourier_pos_encode(x)
         x_embed = self.embed_projection(x_pos_encode)
-        x_embed = x_embed + self.type_embedding
+        # x_embed = x_embed + self.type_embedding
         return x_embed
 
 
@@ -282,6 +282,7 @@ class SAM(nn.Module):
         # mask decoder
         masks, iou = self.mask_decoder(tokens, img_embed)
         # masks = self.proj(tokens)
+        # iou = masks
         return masks, iou
 
 

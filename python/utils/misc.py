@@ -79,34 +79,62 @@ def plot_image_with_mask(image, mask, prompt=None, filename="tmp.png", alpha=0.5
         plt.imsave(filename, panel)
 
 
-def plot_mask_predictions(image, gt_mask, masks, filename="tmp.png", prompt=None, alpha=0.5):
-    image_np = image.detach().cpu().float().numpy()
-    gt_mask = gt_mask.detach().cpu().float().numpy()
-    masks = masks.detach().cpu().float().numpy()
-    image_np = np.transpose(image_np, (1, 2, 0))
+def get_overlayer_image(image_np, mask, alpha=0.7):
+    if image_np.max() > 1.0:
+        image_np /= 255.0
+    mask_rgb = decode_voc_mask(mask) / 255.0  # (H, W, 3), in [0, 1]
+    overlay = np.clip(image_np * (1 - alpha) + mask_rgb * alpha, 0, 1)
+    return overlay, mask_rgb
 
-    masks = masks[:3]
-    fig, axs = plt.subplots(1, 5, figsize=(20, 5))
 
-    axs[0].imshow(image_np)
+def plot_mask_predictions(image, original_masks, gt_mask, masks, filename="tmp.png", prompt=None):
+    image_np = np.transpose(image.detach().cpu().float().numpy(), (1, 2, 0))
+    original_masks_np = original_masks.detach().cpu().float().numpy()
+    gt_mask_np = gt_mask.detach().cpu().float().numpy()
+    masks_np = masks.detach().cpu().float().numpy()[:3]
+
+    # Compute prompt location and debug info
     if prompt is not None:
-        x, y = prompt[0].item(), prompt[1].item()
-        axs[0].plot(x, y, "x", markersize=10, color="red")
+        prompt_np = prompt.detach().cpu()
+        px, py = int(prompt_np[0] * 224), int(prompt_np[1] * 224)
+        prompt_output = f"Prompt value: {original_masks_np[px, py]:.2f}, Unique: {np.unique(original_masks_np)}, Sum {np.sum(original_masks_np)}"
+    else:
+        px = py = None
+        prompt_output = "No prompt"
+
+    # Create figure
+    fig, axs = plt.subplots(1, 4, figsize=(25, 5))
+
+    # Image + overlay
+    overlay, mask_rgb = get_overlayer_image(image_np, original_masks_np, alpha=0.7)
+    axs[0].imshow(overlay)
+    if prompt is not None:
+        axs[0].plot(px, py, "x", markersize=10, color="red")
+    axs[0].set_title("Input Image")
     axs[0].axis("off")
 
-    axs[1].imshow(gt_mask)
+    # Original mask RGB
+    axs[1].imshow(mask_rgb)
     if prompt is not None:
-        x, y = prompt[0].item(), prompt[1].item()
-        axs[1].plot(x, y, "x", markersize=10, color="red")
+        axs[1].plot(px, py, "x", markersize=10, color="red")
+    axs[1].set_title("GT Mask RGB")
     axs[1].axis("off")
 
-    for i, (ax, mask) in enumerate(zip(axs[2:], masks)):
-        ax.imshow(mask)
-        ax.axis("off")
+    # Ground truth mask
+    im_gt = axs[2].imshow(gt_mask_np, cmap="viridis")
+    if prompt is not None:
+        axs[2].plot(px, py, "x", markersize=10, color="red")
+    axs[2].set_title("GT Mask")
+    axs[2].axis("off")
+    fig.colorbar(im_gt, ax=axs[2])
 
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    fig.suptitle(current_time, fontsize=16)
+    # Predicted mask(s)
+    im_pred = axs[3].imshow(masks_np[0], cmap="viridis")
+    axs[3].set_title("Pred Mask 1")
+    axs[3].axis("off")
+    fig.colorbar(im_pred, ax=axs[3])
 
+    fig.suptitle(prompt_output, fontsize=16)
     plt.savefig(filename, bbox_inches="tight", pad_inches=0)
     print(f"Saved Image: {filename}")
     plt.close()
@@ -149,3 +177,25 @@ def get_prompt_from_gtmask(mask, deterministic=False):
 def downsample_mask(mask, target_dim):
     mask_down = F.interpolate(mask.unsqueeze(1).float(), size=(target_dim[0], target_dim[1]), mode="nearest").squeeze(1)
     return mask_down
+
+
+def get_simple_data(b=1, h=224, w=224):
+    img = torch.zeros(b, 3, h, w)
+    mask = torch.zeros(b, h, w)
+
+    img[:, :, : h // 2, :] = 1
+    mask[:, : h // 2, :] = 1
+    return img, mask
+
+
+def plot_tensor_to_file(tensor, filename="tmp"):
+    tensor = tensor.cpu()
+    if tensor.shape == 3:
+        tensor = tensor.permute(1, 2, 0)
+
+    print("Uniques", torch.unique(tensor))
+    tensor = tensor.numpy()
+    plt.figure()
+    plt.imshow(tensor)
+    plt.savefig(f"tmp/{filename}.png")
+    plt.close()

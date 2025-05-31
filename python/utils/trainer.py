@@ -116,10 +116,14 @@ class Trainer:
                     self.evaluate_model(n_iter=n_iter)
         self.save_checkpoint()
 
-    def prepare_inputs(self, gt_masks, deterministic=False):
+    def prepare_inputs(self, gt_masks, deterministic=False, normalize_prompts=True, img_size=(224, 224)):
         selected_prompts, selected_masks, _ = get_prompt_from_gtmask(gt_masks, deterministic=deterministic)
         selected_prompts = selected_prompts.unsqueeze(1).to(self.device)
         selected_masks = selected_masks.to(self.device)
+        selected_prompts = selected_prompts.float()
+        if normalize_prompts:
+            selected_prompts[..., 0] /= img_size[0]
+            selected_prompts[..., 1] /= img_size[1]
         return selected_prompts, selected_masks
 
     def evaluate_model(self, n_iter, max_num_iter=3):
@@ -145,12 +149,13 @@ class Trainer:
         self.model.train()
         it = iter(self.train_loader)
         data, gt_masks = next(it)
+        # data, gt_masks = get_simple_data(1, 224, 224)
         for i in range(1000000):
             self.optimizer.zero_grad()
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
-            selected_prompts, selected_masks = self.prepare_inputs(gt_masks, deterministic=True)
+            selected_prompts, selected_masks = self.prepare_inputs(gt_masks, deterministic=False)
             pred_masks, iou = self.model(data, selected_prompts)
             loss = self.loss_fn(selected_masks, pred_masks, iou)
             print(
@@ -159,12 +164,13 @@ class Trainer:
             loss.backward()
             # self.gradient_sanity_check()
             self.optimizer.step()
-            self.scheduler.step()
+            # self.scheduler.step()
             if (i % 10) == 0:
                 pred_masks = torch.sigmoid(pred_masks)
                 batch_id = 0
                 plot_mask_predictions(
                     data[batch_id],
+                    gt_masks[batch_id],
                     selected_masks[batch_id],
                     pred_masks[batch_id],
                     prompt=selected_prompts[batch_id, 0],
