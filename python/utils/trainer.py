@@ -104,15 +104,15 @@ class Trainer:
             for n_iter, (data, gt_masks) in pbar:
                 self.optimizer.zero_grad()
                 data = data.to(self.device)
+                gt_masks = gt_masks.to(self.device)
 
                 selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
                 pred_masks, iou = self.model(data, selected_prompts)
                 loss = self.loss_fn(selected_masks, pred_masks, iou)
                 loss.backward()
-                # self.gradient_sanity_check()
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
-                if n_iter % eval_every_iter == 0:
+                if (n_iter + 1) % eval_every_iter == 0:
                     self.evaluate_model(n_iter=n_iter)
         self.save_checkpoint()
 

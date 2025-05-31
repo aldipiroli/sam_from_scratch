@@ -8,14 +8,23 @@ class DiceLoss(nn.Module):
         super(DiceLoss, self).__init__()
         self.eps = 1e-6
 
+    def intersection(self, x1, x2):
+        intersection = (x1 * x2).sum(dim=1)
+        return intersection
+
+    def union(self, x1, x2):
+        union = x1.sum(dim=1) + x2.sum(dim=1)
+        return union
+
     def forward(self, pred, gt):
         b = pred.shape[0]
         pred = pred.reshape(b, -1)
         gt = gt.reshape(b, -1)
         assert pred.shape == gt.shape
 
-        intersection = (pred * gt).sum(dim=1)
-        union = pred.sum(dim=1) + gt.sum(dim=1)
+        intersection = self.intersection(pred, gt)
+        union = self.union(pred, gt)
+        # Note: Dice loss does not substract the intersection (https://en.wikipedia.org/wiki/Dice-S%C3%B8rensen_coefficient)
 
         dice = (2 * intersection + self.eps) / (union + self.eps)
         loss = 1 - dice
