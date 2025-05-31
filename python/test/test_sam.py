@@ -22,9 +22,10 @@ def test_fourier_positional_encoding():
     b = 2
     num_promprs = 2
     pos_encoder = FourierPositionalEncodings(num_frequencies)
-    x = torch.randn(b, num_promprs, 2)
+    x = torch.randn(b, num_promprs, 2, requires_grad=True)
     x_encode = pos_encoder(x)
     assert x_encode.shape == (b, num_promprs, 2 * 2 * num_frequencies)
+    assert x_encode.requires_grad
 
 
 def test_fixed_sinusoidal_positional_encodings():
@@ -43,9 +44,10 @@ def test_point_prompt_encoder():
     embed_size = 256
     num_promprs = 2
     point_prompt_encoder = PointPromptEconder(embed_size=embed_size)
-    x = torch.randn(b, num_promprs, 2)
+    x = torch.randn(b, num_promprs, 2, requires_grad=True)
     x_encode = point_prompt_encoder(x)
     assert x_encode.shape == (b, num_promprs, embed_size)
+    assert x_encode.requires_grad
 
 
 def test_self_attention():
@@ -53,10 +55,10 @@ def test_self_attention():
     n = 64
     d = 256
     self_attention = SelfAttention(input_size=256, out_size=256)
-
-    x = torch.randn(b, n, d)
+    x = torch.randn(b, n, d, requires_grad=True)
     y = self_attention(x, x, x)
     assert y.shape == x.shape
+    assert y.requires_grad
 
 
 def test_multihead_attention():
@@ -64,21 +66,21 @@ def test_multihead_attention():
     n = 64
     d = 256
     multihead_attention = MultiheadAttention(input_size=256, out_size=256, num_heads=2)
-
-    x = torch.randn(b, n, d)
+    x = torch.randn(b, n, d, requires_grad=True)
     y = multihead_attention(x, x, x)
     assert y.shape == x.shape
+    assert y.requires_grad
 
 
 def test_image_encoder():
     original_embed_size = 768
     target_embed_size = 256
     img_encoder = ImageEncoder(original_embed_size=original_embed_size, target_embed_size=target_embed_size)
-
     b, c, h, w = 2, 3, 224, 224
-    x = torch.randn(b, c, h, w)
+    x = torch.randn(b, c, h, w, requires_grad=True)
     x_encoded = img_encoder(x)
     assert x_encoded.shape[-1] == target_embed_size
+    assert x_encoded.requires_grad
 
 
 def test_mask_decoder_layer():
@@ -88,11 +90,13 @@ def test_mask_decoder_layer():
     num_prompts = 2
     mask_decoder_layer = MaskDecoderLayer(embed_size=256, dropout=0.1)
 
-    tokens = torch.randn(b, num_prompts, d)
-    img_embed = torch.randn(b, n, d)
+    tokens = torch.randn(b, num_prompts, d, requires_grad=True)
+    img_embed = torch.randn(b, n, d, requires_grad=True)
     tokens_, img_embed_ = mask_decoder_layer(tokens, img_embed)
     assert tokens.shape == tokens_.shape
     assert img_embed.shape == img_embed_.shape
+    assert tokens_.requires_grad
+    assert img_embed_.requires_grad
 
 
 def test_mask_decoder():
@@ -107,8 +111,8 @@ def test_mask_decoder():
         num_decoder_layers=2, embed_size=256, dropout=0.1, resulting_patch_size=resulting_patch_size
     )
 
-    tokens = torch.randn(b, num_prompts + 4, d)
-    img_embed = torch.randn(b, n, d)
+    tokens = torch.randn(b, num_prompts + 4, d, requires_grad=True)
+    img_embed = torch.randn(b, n, d, requires_grad=True)
     masks, iou = mask_decoder(tokens, img_embed)
     assert masks.shape == (
         b,
@@ -117,6 +121,8 @@ def test_mask_decoder():
         (resulting_patch_size * upscale_factor),
     )
     assert iou.shape == (b, num_output_tokens)
+    assert masks.requires_grad
+    assert iou.requires_grad
 
 
 def test_sam():
@@ -126,8 +132,9 @@ def test_sam():
     resulting_patch_size = 14
     upscale_factor = 4
     num_output_tokens = 4
-    img = torch.randn(b, c, h, w)
-    prompt = torch.randint(0, h, size=(b, num_prompts, 2))
+    img = torch.randn(b, c, h, w, requires_grad=True)
+    prompt = torch.randint(0, h, size=(b, num_prompts, 2)).float()
+    prompt.requires_grad = True
     masks, iou = sam(img, prompt)
     assert masks.shape == (
         b,
@@ -136,6 +143,8 @@ def test_sam():
         (resulting_patch_size * upscale_factor),
     )
     assert iou.shape == (b, num_output_tokens)
+    assert masks.requires_grad
+    assert iou.requires_grad
 
 
 if __name__ == "__main__":
