@@ -66,7 +66,7 @@ def get_fixed_sin_positional_encodings(batch_size, num_patches, embed_size):
             if i % 2 == 0:
                 pos_encodings[pos, i] = math.sin(pos / 10000 ** (2 * i / embed_size))
             else:
-                pos_encodings[pos, i] = math.sin(pos / 10000 ** (2 * i / embed_size))
+                pos_encodings[pos, i] = math.cos(pos / 10000 ** (2 * i / embed_size))
     pos_encodings = pos_encodings.unsqueeze(0).expand(batch_size, num_patches, embed_size)
     return pos_encodings
 
@@ -82,13 +82,13 @@ class PointPromptEconder(nn.Module):
         self.embed_size = embed_size
 
         self.fourier_pos_encode = FourierPositionalEncodings(num_frequencies)
-        self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1))  # not quite sure
+        self.type_embedding = nn.parameter.Parameter(data=torch.zeros(1, 1, self.embed_size))  # not quite sure
         self.embed_projection = nn.Linear(self.size_pos_encode, embed_size)
 
     def forward(self, x):
         x_pos_encode = self.fourier_pos_encode(x)
         x_embed = self.embed_projection(x_pos_encode)
-        x_embed = x_embed + self.type_embedding.expand(self.embed_size)
+        x_embed = x_embed + self.type_embedding
         return x_embed
 
 
@@ -106,7 +106,7 @@ class SelfAttention(nn.Module):
         q = self.project_q(in_q)
         v = self.project_v(in_v)
 
-        qk = q @ k.transpose(-2, -1) * (self.out_size**0.5)
+        qk = q @ k.transpose(-2, -1) / (self.out_size**0.5)
         qk = torch.nn.functional.softmax(qk, -1)
         attention = qk @ v
         return attention
@@ -119,7 +119,7 @@ class MultiheadAttention(nn.Module):
         self.out_size = out_size
         self.num_heads = num_heads
         head_out_size = int(out_size / num_heads)
-        assert input_size % input_size == 0
+        assert input_size % num_heads == 0
 
         self.attention_heads = torch.nn.ModuleList([SelfAttention(input_size, head_out_size) for _ in range(num_heads)])
         self.lin_proj = nn.Linear(self.out_size, self.out_size)
@@ -147,30 +147,35 @@ class MaskDecoderLayer(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(embed_size, embed_size),
         )
+        self.norm1 = nn.LayerNorm(embed_size)
+        self.norm2 = nn.LayerNorm(embed_size)
+        self.norm3 = nn.LayerNorm(embed_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, tokens, img_embed):
         b, n, d = img_embed.shape
         fixed_pos_encodings = get_fixed_sin_positional_encodings(batch_size=b, num_patches=n, embed_size=d).to(
             tokens.device
         )
+        # Self-attention on tokens
+        tokens_ = self.token_self_attn(in_k=tokens, in_q=tokens, in_v=tokens)
+        tokens = tokens + self.dropout(tokens_)
+        tokens = self.norm1(tokens)
 
-        tokens_self_attn = self.token_self_attn(in_k=tokens, in_q=tokens, in_v=tokens)
-        tokens_self_attn += tokens
-        token_to_img_attn = self.token_to_img_corss_attn(
-            in_k=add_positional_embeddings(img_embed, fixed_pos_encodings),
-            in_q=tokens_self_attn,
-            in_v=add_positional_embeddings(img_embed, fixed_pos_encodings),
-        )
-        token_to_img_attn += tokens
-        token_to_img_attn_mlp = self.mlp(token_to_img_attn)
+        # Cross-attention from tokens to image
+        img_with_pos = add_positional_embeddings(img_embed, fixed_pos_encodings)
+        token_to_img = self.token_to_img_corss_attn(in_k=img_with_pos, in_q=tokens, in_v=img_with_pos)
+        tokens = tokens + self.dropout(token_to_img)
+        tokens = self.norm2(tokens)
 
-        img_to_token_attn = self.img_to_token_cross_attn(
-            in_k=token_to_img_attn_mlp,
-            in_q=add_positional_embeddings(img_embed, fixed_pos_encodings),
-            in_v=token_to_img_attn_mlp,
-        )
-        # TODO: add skip connection, layer_norm, and drop out
-        return token_to_img_attn_mlp, img_to_token_attn
+        # MLP on tokens
+        tokens_ = self.mlp(tokens)
+        tokens = tokens + self.dropout(tokens_)
+        tokens = self.norm3(tokens)
+
+        # Cross-attention from image to tokens
+        img_to_token = self.img_to_token_cross_attn(in_k=tokens, in_q=img_with_pos, in_v=tokens)
+        return tokens, img_to_token
 
 
 class MaskDecoder(nn.Module):
@@ -230,6 +235,23 @@ class MaskDecoder(nn.Module):
         return masks_reshape, iou
 
 
+class SimpleMaskDecoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Project the 256-dimensional feature to a flattened 56x56 image
+        self.fc = nn.Linear(256, 56 * 56)
+        # Optional: final conv layer to convert to 1 channel (e.g., if stacking multiple inputs)
+        self.final_conv = nn.Conv2d(1, 1, kernel_size=1)
+
+    def forward(self, x):
+        # x: (b, 2, 256)
+        x = x.mean(dim=0, keepdim=True)  # shape: (1, 2, 256)
+        x = self.fc(x)  # shape: (1, 2, 3136)
+        x = x.mean(dim=1)  # aggregate over the 2 inputs → (1, 3136)
+        x = x.view(1, 1, 56, 56)
+        return x
+
+
 class SAM(nn.Module):
     def __init__(self, embed_size=256, num_output_tokens=4, num_decoder_layers=2):
         super(SAM, self).__init__()
@@ -245,6 +267,7 @@ class SAM(nn.Module):
             dropout=0.1,
             num_output_tokens=num_output_tokens,
         )
+        # self.proj = SimpleMaskDecoder()
 
     def forward(self, img, prompt):
         # img embedding
@@ -258,6 +281,7 @@ class SAM(nn.Module):
 
         # mask decoder
         masks, iou = self.mask_decoder(tokens, img_embed)
+        # masks = self.proj(tokens)
         return masks, iou
 
 
