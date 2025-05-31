@@ -1,5 +1,5 @@
-import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from utils.misc import downsample_mask
 
 
@@ -38,12 +38,13 @@ class SAMLoss(nn.Module):
     def forward(self, gt_masks, pred_masks, iou):
         b, num_masks, pred_h, pred_w = pred_masks.shape
         gt_mask_down = downsample_mask(gt_masks, target_dim=(pred_h, pred_w)).to(pred_masks.device)
-        dice_loss_fn = DiceLoss()
-        mask_losses = []
-        for i in range(num_masks):
-            curr_loss = dice_loss_fn(pred_masks[:, i, :, :], gt_mask_down)
-            mask_losses.append(curr_loss)
-        mask_losses = torch.stack(mask_losses, 0)
-        loss_idx = torch.argmin(mask_losses)
-        loss = mask_losses[loss_idx]
-        return loss
+
+        gt_masks = gt_mask_down.float().unsqueeze(1)  # (B, 1, H, W)
+
+        bce_losses = F.binary_cross_entropy_with_logits(
+            pred_masks, gt_masks.expand(-1, num_masks, -1, -1), reduction="none"
+        )  # (B, N, H, W)
+        bce_losses = bce_losses.mean(dim=(2, 3))  # (B, N)
+
+        min_losses, _ = bce_losses.min(dim=1)  # (B,)
+        return min_losses.mean()
