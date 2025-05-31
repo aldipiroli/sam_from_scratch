@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils.misc import get_device
+from utils.misc import get_device, get_prompt_from_gtmask
 
 
 class Trainer:
@@ -101,10 +101,12 @@ class Trainer:
     def train_one_epoch(self, eval_every_iter=500):
         self.model.train()
         with tqdm(enumerate(self.train_loader), desc=f"Epoch {self.epoch}") as pbar:
-            for n_iter, (data, labels) in pbar:
+            for n_iter, (data, masks) in pbar:
                 self.optimizer.zero_grad()
                 data = data.to(self.device)
-                output_dict = self.model(data)
+                selected_prompts, _ = get_prompt_from_gtmask(masks)
+                selected_prompts = selected_prompts.unsqueeze(1).to(self.device)
+                output_dict = self.model(data, selected_prompts)
                 loss = self.loss_fn(output_dict)
                 loss.backward()
                 self.gradient_sanity_check()

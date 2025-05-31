@@ -11,7 +11,7 @@ def train():
     logger = get_logger(config["LOG_DIR"])
     trainer = Trainer(config, logger)
 
-    model = SAM(cfg=config["MODEL"])
+    model = SAM(embed_size=256, num_output_tokens=4, num_decoder_layers=2)
     trainer.set_model(model)
 
     train_dataset = PascalVOCDataset(root_dir=config["DATA"]["root"], split="train")

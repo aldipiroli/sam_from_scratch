@@ -51,7 +51,7 @@ class FourierPositionalEncodings(nn.Module):
 
     def forward(self, x):
         b, num_promprs, prompt_dim = x.shape
-        x = x.unsqueeze(-1) * self.frequencies
+        x = x.unsqueeze(-1) * self.frequencies.to(x.device)
         sin = torch.sin(x)
         cos = torch.cos(x)
         x_pos_encode = torch.cat([sin, cos], -1)
@@ -121,7 +121,7 @@ class MultiheadAttention(nn.Module):
         head_out_size = int(out_size / num_heads)
         assert input_size % input_size == 0
 
-        self.attention_heads = [SelfAttention(input_size, head_out_size) for _ in range(num_heads)]
+        self.attention_heads = torch.nn.ModuleList([SelfAttention(input_size, head_out_size) for _ in range(num_heads)])
         self.lin_proj = nn.Linear(self.out_size, self.out_size)
 
     def forward(self, in_k, in_q, in_v):
@@ -150,7 +150,9 @@ class MaskDecoderLayer(nn.Module):
 
     def forward(self, tokens, img_embed):
         b, n, d = img_embed.shape
-        fixed_pos_encodings = get_fixed_sin_positional_encodings(batch_size=b, num_patches=n, embed_size=d)
+        fixed_pos_encodings = get_fixed_sin_positional_encodings(batch_size=b, num_patches=n, embed_size=d).to(
+            tokens.device
+        )
 
         tokens_self_attn = self.token_self_attn(in_k=tokens, in_q=tokens, in_v=tokens)
         tokens_self_attn += tokens
@@ -177,7 +179,9 @@ class MaskDecoder(nn.Module):
         self.embed_size = embed_size
         self.resulting_patch_size = resulting_patch_size  # h//patch_size
         self.num_output_tokens = num_output_tokens
-        self.decoder_layers = [MaskDecoderLayer(embed_size=256, dropout=dropout) for _ in range(num_decoder_layers)]
+        self.decoder_layers = torch.nn.ModuleList(
+            [MaskDecoderLayer(embed_size=256, dropout=dropout) for _ in range(num_decoder_layers)]
+        )
         self.upsample = nn.Sequential(
             nn.ConvTranspose2d(embed_size, embed_size, kernel_size=2, stride=2),
             nn.GELU(),

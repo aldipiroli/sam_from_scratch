@@ -43,9 +43,7 @@ def decode_voc_mask(mask: torch.Tensor) -> np.ndarray:
 
     h, w = mask.shape
     rgb_mask = np.zeros((h, w, 3), dtype=np.uint8)
-
-    valid = mask != 255
-    rgb_mask[valid] = VOC_COLORMAP[mask[valid]]
+    rgb_mask = VOC_COLORMAP[mask]
     return rgb_mask
 
 
@@ -111,6 +109,7 @@ class PascalVOCDataset(Dataset):
         mask = Image.open(mask_path)
         mask = np.array(mask, dtype=np.uint8)
         mask = torch.from_numpy(mask).long()
+        mask[mask == 255] = 0  # mask unknown to background (for simplicity)
 
         if self.transforms:
             image, mask = self.transforms(image, mask)
