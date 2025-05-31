@@ -75,8 +75,8 @@ class Trainer:
 
     def set_optimizer(self, optim_config):
         self.optim_config = optim_config
-        if self.optim_config["optimizer"] == "Adam":
-            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.optim_config["lr"])
+        if self.optim_config["optimizer"] == "AdamW":
+            self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.optim_config["lr"])
 
             self.scheduler = torch.optim.lr_scheduler.StepLR(
                 self.optimizer,
@@ -116,8 +116,8 @@ class Trainer:
                     self.evaluate_model(n_iter=n_iter)
         self.save_checkpoint()
 
-    def prepare_inputs(self, gt_masks):
-        selected_prompts, selected_masks, _ = get_prompt_from_gtmask(gt_masks)
+    def prepare_inputs(self, gt_masks, deterministic=False):
+        selected_prompts, selected_masks, _ = get_prompt_from_gtmask(gt_masks, deterministic=deterministic)
         selected_prompts = selected_prompts.unsqueeze(1).to(self.device)
         selected_masks = selected_masks.to(self.device)
         return selected_prompts, selected_masks
@@ -150,18 +150,22 @@ class Trainer:
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
-            selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
+            selected_prompts, selected_masks = self.prepare_inputs(gt_masks, deterministic=True)
             pred_masks, iou = self.model(data, selected_prompts)
-            pred_masks = torch.sigmoid(pred_masks)
             loss = self.loss_fn(selected_masks, pred_masks, iou)
-            print(f"iter {i}, loss {loss}")
+            print(
+                f"iter {i}, loss {loss}, pred_masks max: {pred_masks.max()} min: {pred_masks.min()} avg: {pred_masks.mean()}"
+            )
             loss.backward()
+            # self.gradient_sanity_check()
             self.optimizer.step()
-            if (i % 25) == 0:
+            self.scheduler.step()
+            if (i % 10) == 0:
+                pred_masks = torch.sigmoid(pred_masks)
                 batch_id = 0
                 plot_mask_predictions(
                     data[batch_id],
-                    gt_masks[batch_id],
+                    selected_masks[batch_id],
                     pred_masks[batch_id],
                     prompt=selected_prompts[batch_id, 0],
                     # filename=f"tmp/tmp_{str(i).zfill(6)}.png",
@@ -177,12 +181,12 @@ class Trainer:
         for name, param in self.model.named_parameters():
             if param.grad is None:
                 no_grad_name.append(name)
-                print(f"None grad: {name}")
+                self.logger.info(f"None grad: {name}")
             else:
                 grad_name.append(name)
                 total_gradient += torch.sum(torch.abs(param.grad))
         assert total_gradient == total_gradient
         if len(no_grad_name) > 0:
-            print(f"no_grad_name {no_grad_name}")
+            self.logger.info(f"no_grad_name {no_grad_name}")
             raise ValueError("layers without gradient are present")
         assert len(no_grad_name) == 0

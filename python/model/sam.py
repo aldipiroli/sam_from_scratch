@@ -243,6 +243,7 @@ class SAM(nn.Module):
             num_decoder_layers=num_decoder_layers,
             embed_size=embed_size,
             dropout=0.1,
+            num_output_tokens=num_output_tokens,
         )
 
     def forward(self, img, prompt):

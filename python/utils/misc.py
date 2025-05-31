@@ -104,28 +104,40 @@ def plot_mask_predictions(image, gt_mask, masks, filename="tmp.png", prompt=None
         ax.imshow(mask)
         ax.axis("off")
 
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fig.suptitle(current_time, fontsize=16)
+
     plt.savefig(filename, bbox_inches="tight", pad_inches=0)
     print(f"Saved Image: {filename}")
     plt.close()
 
 
-def get_prompt_from_gtmask(mask):
+def get_prompt_from_gtmask(mask, deterministic=False):
     b = mask.shape[0]
     selected_prompts = []
     selected_classes = []
     selected_masks = []
+
     for curr_batch in range(b):
         unique = torch.unique(mask[curr_batch].flatten())
-        random_index = torch.randint(0, len(unique), (1,)).item()
-        random_class = unique[random_index]
-        selected_classes.append(random_class)
 
-        possible_prompts = mask[curr_batch] == random_class
-        possible_prompts_indicies = torch.nonzero(possible_prompts)
-        prompt = torch.randperm(possible_prompts_indicies.size(0))[0]  # randomly select a possible prompt
-        selected_prompts.append(possible_prompts_indicies[prompt])
+        if deterministic:
+            selected_class = unique[0]
+        else:
+            random_index = torch.randint(0, len(unique), (1,)).item()
+            selected_class = unique[random_index]
+        selected_classes.append(selected_class)
 
-        curr_mask = mask[curr_batch] == random_class
+        possible_prompts = mask[curr_batch] == selected_class
+        possible_prompts_indices = torch.nonzero(possible_prompts)
+
+        if deterministic:
+            prompt_idx = 0
+        else:
+            prompt_idx = torch.randperm(possible_prompts_indices.size(0))[0]
+        selected_prompts.append(possible_prompts_indices[prompt_idx])
+
+        curr_mask = mask[curr_batch] == selected_class
         selected_masks.append(curr_mask)
 
     selected_prompts = torch.stack(selected_prompts, 0)
@@ -135,5 +147,5 @@ def get_prompt_from_gtmask(mask):
 
 
 def downsample_mask(mask, target_dim):
-    mask_down = F.interpolate(mask.unsqueeze(1).float(), size=(target_dim[0], target_dim[1]), mode="nearest").squeeze()
+    mask_down = F.interpolate(mask.unsqueeze(1).float(), size=(target_dim[0], target_dim[1]), mode="nearest").squeeze(1)
     return mask_down
