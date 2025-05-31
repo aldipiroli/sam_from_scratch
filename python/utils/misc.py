@@ -51,7 +51,7 @@ def plot_single_image(tensor, filename):
     img.save(filename)
 
 
-def save_image_with_mask(image, mask, prompt=None, filename="tmp.png", alpha=0.5):
+def plot_image_with_mask(image, mask, prompt=None, filename="tmp.png", alpha=0.5, overlay=False):
     assert image.ndim == 3 and image.shape[0] == 3, "Image must be (3, H, W)"
     assert mask.ndim == 2 and mask.shape == image.shape[1:], "Mask must match image spatial size"
 
@@ -77,6 +77,36 @@ def save_image_with_mask(image, mask, prompt=None, filename="tmp.png", alpha=0.5
     else:
         panel = np.concatenate([image_np, mask_rgb, overlay], axis=1)
         plt.imsave(filename, panel)
+
+
+def plot_mask_predictions(image, gt_mask, masks, filename="tmp.png", prompt=None, alpha=0.5):
+    image_np = image.detach().cpu().float().numpy()
+    gt_mask = gt_mask.detach().cpu().float().numpy()
+    masks = masks.detach().cpu().float().numpy()
+    image_np = np.transpose(image_np, (1, 2, 0))
+
+    masks = masks[:3]
+    fig, axs = plt.subplots(1, 5, figsize=(20, 5))
+
+    axs[0].imshow(image_np)
+    if prompt is not None:
+        x, y = prompt[0].item(), prompt[1].item()
+        axs[0].plot(x, y, "x", markersize=10, color="red")
+    axs[0].axis("off")
+
+    axs[1].imshow(gt_mask)
+    if prompt is not None:
+        x, y = prompt[0].item(), prompt[1].item()
+        axs[1].plot(x, y, "x", markersize=10, color="red")
+    axs[1].axis("off")
+
+    for i, (ax, mask) in enumerate(zip(axs[2:], masks)):
+        ax.imshow(mask)
+        ax.axis("off")
+
+    plt.savefig(filename, bbox_inches="tight", pad_inches=0)
+    print(f"Saved Image: {filename}")
+    plt.close()
 
 
 def get_prompt_from_gtmask(mask):

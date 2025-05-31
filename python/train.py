@@ -21,7 +21,8 @@ def train():
     trainer.set_loss_function(loss_fn=SAMLoss())
     trainer.save_checkpoint()
     trainer.load_latest_checkpoint()
-    trainer.train()
+    # trainer.train()
+    trainer.overfit_one_batch()
 
 
 if __name__ == "__main__":

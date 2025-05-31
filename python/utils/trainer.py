@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils.misc import get_device, get_prompt_from_gtmask
+from utils.misc import get_device, get_prompt_from_gtmask, plot_mask_predictions
 
 
 class Trainer:
@@ -98,7 +98,7 @@ class Trainer:
             self.train_one_epoch()
             self.evaluate_model()
 
-    def train_one_epoch(self, eval_every_iter=500):
+    def train_one_epoch(self, eval_every_iter=1):
         self.model.train()
         with tqdm(enumerate(self.train_loader), desc=f"Epoch {self.epoch}") as pbar:
             for n_iter, (data, gt_masks) in pbar:
@@ -122,17 +122,53 @@ class Trainer:
         selected_masks = selected_masks.to(self.device)
         return selected_prompts, selected_masks
 
-    def evaluate_model(self, n_iter):
+    def evaluate_model(self, n_iter, max_num_iter=3):
         self.model.eval()
         for n_iter, (data, gt_masks) in enumerate(self.val_loader):
+            if n_iter > max_num_iter:
+                break
+
             self.optimizer.zero_grad()
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
             selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
             pred_masks, iou = self.model(data, selected_prompts)
+            batch_id = 0
+            plot_mask_predictions(
+                data[batch_id], pred_masks[batch_id], prompt=selected_prompts[batch_id, 0], filename=f"tmp.png"
+            )
 
         self.model.train()
+
+    def overfit_one_batch(self):
+        self.model.train()
+        it = iter(self.train_loader)
+        data, gt_masks = next(it)
+        for i in range(1000000):
+            self.optimizer.zero_grad()
+            data = data.to(self.device)
+            gt_masks = gt_masks.to(self.device)
+
+            selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
+            pred_masks, iou = self.model(data, selected_prompts)
+            pred_masks = torch.sigmoid(pred_masks)
+            loss = self.loss_fn(selected_masks, pred_masks, iou)
+            print(f"iter {i}, loss {loss}")
+            loss.backward()
+            self.optimizer.step()
+            if (i % 25) == 0:
+                batch_id = 0
+                plot_mask_predictions(
+                    data[batch_id],
+                    gt_masks[batch_id],
+                    pred_masks[batch_id],
+                    prompt=selected_prompts[batch_id, 0],
+                    # filename=f"tmp/tmp_{str(i).zfill(6)}.png",
+                    filename=f"tmp/tmp.png",
+                )
+
+        self.save_checkpoint()
 
     def gradient_sanity_check(self):
         total_gradient = 0
