@@ -2,6 +2,7 @@ import os
 import sys
 
 import torch
+import torch.nn as nn
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.sam import (
@@ -147,6 +148,38 @@ def test_sam():
     assert iou.requires_grad
 
 
+def test_gradient_flow():
+    model = SAM()
+    b, c, h, w = 2, 3, 224, 224
+    num_prompts = 2
+
+    img = torch.randn(b, c, h, w, requires_grad=True)
+    gt_mask = torch.randn(b, 4, 56, 56, requires_grad=False)
+    gt_iou = torch.randn(b, 4)
+    prompt = torch.randint(0, h, size=(b, num_prompts, 2)).float()
+    prompt.requires_grad = True
+
+    criterion = nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters())
+
+    optimizer.zero_grad()
+    masks, iou = model(img, prompt)
+    loss_mask = criterion(masks.reshape(-1), gt_mask.reshape(-1))
+    loss_iou = criterion(iou.reshape(-1), gt_iou.reshape(-1))
+    loss = loss_mask + loss_iou
+    loss.backward()
+
+    excluded = ["image_encoder.encoder.model"]
+    flow_problem = False
+    for name, param in model.named_parameters():
+        if any(exclude in name for exclude in excluded):
+            continue
+        if param.grad is None:
+            print(f"Parameter '{name}' has NO gradient!")
+            flow_problem = True
+    assert not flow_problem
+
+
 if __name__ == "__main__":
     test_self_attention()
     test_multihead_attention()
@@ -157,4 +190,5 @@ if __name__ == "__main__":
     test_mask_decoder()
     test_image_encoder()
     test_sam()
+    test_gradient_flow()
     print("Tests passed!")

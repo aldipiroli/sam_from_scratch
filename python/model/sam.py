@@ -103,8 +103,8 @@ class SelfAttention(nn.Module):
 
     def forward(self, in_k, in_q, in_v):
         k = self.project_k(in_k)
-        q = self.project_k(in_q)
-        v = self.project_k(in_v)
+        q = self.project_q(in_q)
+        v = self.project_v(in_v)
 
         qk = q @ k.transpose(-2, -1) * (self.out_size**0.5)
         qk = torch.nn.functional.softmax(qk, -1)
@@ -219,6 +219,7 @@ class MaskDecoder(nn.Module):
         )
         token_to_img_res += tokens
         mask_token = token_to_img_res[:, : self.num_output_tokens, :]
+        mask_token = self.mlp_mask(mask_token)
         masks = torch.matmul(mask_token, img_embed_upsample_reshape)
         masks_reshape = masks.reshape(
             b, self.num_output_tokens, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4)
@@ -262,5 +263,3 @@ class SAM(nn.Module):
 if __name__ == "__main__":
     cfg = {}
     model = SAM(cfg)
-    x = torch.randn(8, 3, 224, 224)
-    out = model(x)
