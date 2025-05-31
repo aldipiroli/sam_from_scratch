@@ -5,7 +5,7 @@ MODEL:
   img_size: [3, 256, 256]
 DATA:
   root: "../data"
-  batch_size: 64
+  batch_size: 8
 OPTIM:
   optimizer: "Adam"
   lr: 0.001

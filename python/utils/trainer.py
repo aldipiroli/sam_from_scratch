@@ -101,27 +101,36 @@ class Trainer:
     def train_one_epoch(self, eval_every_iter=500):
         self.model.train()
         with tqdm(enumerate(self.train_loader), desc=f"Epoch {self.epoch}") as pbar:
-            for n_iter, (data, masks) in pbar:
+            for n_iter, (data, gt_masks) in pbar:
                 self.optimizer.zero_grad()
                 data = data.to(self.device)
-                selected_prompts, _ = get_prompt_from_gtmask(masks)
-                selected_prompts = selected_prompts.unsqueeze(1).to(self.device)
-                output_dict = self.model(data, selected_prompts)
-                loss = self.loss_fn(output_dict)
+
+                selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
+                pred_masks, iou = self.model(data, selected_prompts)
+                loss = self.loss_fn(selected_masks, pred_masks, iou)
                 loss.backward()
-                self.gradient_sanity_check()
+                # self.gradient_sanity_check()
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
                 if n_iter % eval_every_iter == 0:
                     self.evaluate_model(n_iter=n_iter)
         self.save_checkpoint()
 
-    def evaluate_model(self):
+    def prepare_inputs(self, gt_masks):
+        selected_prompts, selected_masks, _ = get_prompt_from_gtmask(gt_masks)
+        selected_prompts = selected_prompts.unsqueeze(1).to(self.device)
+        selected_masks = selected_masks.to(self.device)
+        return selected_prompts, selected_masks
+
+    def evaluate_model(self, n_iter):
         self.model.eval()
-        for idx, (data, labels) in enumerate(self.val_loader):
+        for n_iter, (data, gt_masks) in enumerate(self.val_loader):
+            self.optimizer.zero_grad()
             data = data.to(self.device)
-            output_dict = self.model(data)
-            # do stuff...
+            gt_masks = gt_masks.to(self.device)
+
+            selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
+            pred_masks, iou = self.model(data, selected_prompts)
 
         self.model.train()
 
@@ -137,4 +146,7 @@ class Trainer:
                 grad_name.append(name)
                 total_gradient += torch.sum(torch.abs(param.grad))
         assert total_gradient == total_gradient
+        if len(no_grad_name) > 0:
+            print(f"no_grad_name {no_grad_name}")
+            raise ValueError("layers without gradient are present")
         assert len(no_grad_name) == 0

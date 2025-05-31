@@ -5,6 +5,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
 import yaml
 from pascal_voc_dataset.pascal_voc_dataset import decode_voc_mask
 from PIL import Image
@@ -82,9 +83,11 @@ def get_prompt_from_gtmask(mask):
     b = mask.shape[0]
     selected_prompts = []
     selected_classes = []
+    selected_masks = []
     for curr_batch in range(b):
         unique = torch.unique(mask[curr_batch].flatten())
-        random_class = np.random.choice(unique)
+        random_index = torch.randint(0, len(unique), (1,)).item()
+        random_class = unique[random_index]
         selected_classes.append(random_class)
 
         possible_prompts = mask[curr_batch] == random_class
@@ -92,6 +95,15 @@ def get_prompt_from_gtmask(mask):
         prompt = torch.randperm(possible_prompts_indicies.size(0))[0]  # randomly select a possible prompt
         selected_prompts.append(possible_prompts_indicies[prompt])
 
+        curr_mask = mask[curr_batch] == random_class
+        selected_masks.append(curr_mask)
+
     selected_prompts = torch.stack(selected_prompts, 0)
     selected_classes = torch.tensor(selected_classes).int()
-    return selected_prompts, selected_classes
+    selected_masks = torch.stack(selected_masks, 0)
+    return selected_prompts, selected_masks, selected_classes
+
+
+def downsample_mask(mask, target_dim):
+    mask_down = F.interpolate(mask.unsqueeze(1).float(), size=(target_dim[0], target_dim[1]), mode="nearest").squeeze()
+    return mask_down

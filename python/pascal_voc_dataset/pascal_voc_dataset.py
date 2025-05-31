@@ -95,7 +95,7 @@ class PascalVOCDataset(Dataset):
             self.image_ids = [line.strip() for line in f.readlines()]
 
         self.image_dir = os.path.join(self.root_dir, "JPEGImages")
-        self.mask_dir = os.path.join(self.root_dir, "SegmentationClass")
+        self.mask_dir = os.path.join(self.root_dir, "SegmentationObject")
 
     def __len__(self):
         return len(self.image_ids)
