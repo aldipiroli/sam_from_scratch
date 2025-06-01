@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime
 
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -87,52 +88,67 @@ def get_overlayer_image(image_np, mask, alpha=0.7):
     return overlay, mask_rgb
 
 
-def plot_mask_predictions(image, original_masks, gt_mask, masks, filename="tmp.png", prompt=None):
-    image_np = np.transpose(image.detach().cpu().float().numpy(), (1, 2, 0))
-    original_masks_np = original_masks.detach().cpu().float().numpy()
-    gt_mask_np = gt_mask.detach().cpu().float().numpy()
-    masks_np = masks.detach().cpu().float().numpy()[:3]
+def plot_mask_predictions(
+    image, original_masks, target_gt_mask, pred_masks, prompt=None, filename="tmp.png", img_size=(224, 224)
+):
+    image = np.transpose(image.detach().cpu().float().numpy(), (1, 2, 0))
+    original_masks = original_masks.detach().cpu().float().numpy()
+    target_gt_mask = target_gt_mask.detach().cpu().float().numpy()
+    pred_masks = pred_masks.detach().cpu().float().numpy()[:3]
 
-    # Compute prompt location and debug info
-    if prompt is not None:
-        prompt_np = prompt.detach().cpu()
-        px, py = int(prompt_np[0] * 224), int(prompt_np[1] * 224)
-        prompt_output = f"Prompt value: {original_masks_np[px, py]:.2f}, Unique: {np.unique(original_masks_np)}, Sum {np.sum(original_masks_np)}"
-    else:
-        px = py = None
-        prompt_output = "No prompt"
+    prompt_np = prompt.detach().cpu()
+    px, py = int(prompt_np[1] * img_size[0]), int(prompt_np[0] * img_size[1])  # Flipped x,y for visualization
+    prompt_output = (
+        f"Prompt value: {original_masks[px, py]:.2f}, Unique: {np.unique(original_masks)}, Sum {np.sum(original_masks)}"
+    )
 
-    # Create figure
-    fig, axs = plt.subplots(1, 4, figsize=(25, 5))
+    n_uniques = len(np.unique(original_masks))
+    fig = plt.figure(figsize=(5 * max(4, n_uniques), 10))
+    gs = gridspec.GridSpec(2, max(4, n_uniques), figure=fig)
 
     # Image + overlay
-    overlay, mask_rgb = get_overlayer_image(image_np, original_masks_np, alpha=0.7)
-    axs[0].imshow(overlay)
+    overlay, mask_rgb = get_overlayer_image(image, original_masks, alpha=0.7)
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax0.imshow(overlay)
     if prompt is not None:
-        axs[0].plot(px, py, "x", markersize=10, color="red")
-    axs[0].set_title("Input Image")
-    axs[0].axis("off")
+        ax0.plot(px, py, "x", markersize=10, color="red")
+    ax0.set_title("Input Image")
+    ax0.axis("off")
 
-    # Original mask RGB
-    axs[1].imshow(mask_rgb)
+    # Original mask
+    ax1 = fig.add_subplot(gs[0, 1])
+    m = ax1.imshow(original_masks)
     if prompt is not None:
-        axs[1].plot(px, py, "x", markersize=10, color="red")
-    axs[1].set_title("GT Mask RGB")
-    axs[1].axis("off")
+        ax1.plot(px, py, "x", markersize=10, color="red")
+    ax1.set_title("Original Mask")
+    ax1.axis("off")
+    fig.colorbar(m, ax=ax1)
 
-    # Ground truth mask
-    im_gt = axs[2].imshow(gt_mask_np, cmap="viridis")
+    # Target GT Mask
+    ax2 = fig.add_subplot(gs[0, 2])
+    im_gt = ax2.imshow(target_gt_mask, cmap="viridis")
     if prompt is not None:
-        axs[2].plot(px, py, "x", markersize=10, color="red")
-    axs[2].set_title("GT Mask")
-    axs[2].axis("off")
-    fig.colorbar(im_gt, ax=axs[2])
+        ax2.plot(px, py, "x", markersize=10, color="red")
+    ax2.set_title("Target GT Mask")
+    ax2.axis("off")
+    fig.colorbar(im_gt, ax=ax2)
 
-    # Predicted mask(s)
-    im_pred = axs[3].imshow(masks_np[0], cmap="viridis")
-    axs[3].set_title("Pred Mask 1")
-    axs[3].axis("off")
-    fig.colorbar(im_pred, ax=axs[3])
+    # Predicted mask
+    ax3 = fig.add_subplot(gs[0, 3])
+    im_pred = ax3.imshow(pred_masks[0], cmap="viridis")
+    ax3.set_title("Pred Mask 1")
+    ax3.axis("off")
+    fig.colorbar(im_pred, ax=ax3)
+
+    # Unique masks
+    for i, u in enumerate(np.unique(original_masks)):
+        ax = fig.add_subplot(gs[1, i])
+        curr_mask = original_masks == u
+        ax.set_title(f"Value {u}")
+        ax.imshow(curr_mask, cmap="viridis")
+        if prompt is not None:
+            ax.plot(px, py, "x", markersize=10, color="red")
+        fig.colorbar(im_gt, ax=ax)
 
     fig.suptitle(prompt_output, fontsize=16)
     plt.savefig(filename, bbox_inches="tight", pad_inches=0)
@@ -141,37 +157,39 @@ def plot_mask_predictions(image, original_masks, gt_mask, masks, filename="tmp.p
 
 
 def get_prompt_from_gtmask(mask, deterministic=False):
-    b = mask.shape[0]
+    b, h, w = mask.shape
+    device = mask.device
+
     selected_prompts = []
     selected_classes = []
     selected_masks = []
 
-    for curr_batch in range(b):
-        unique = torch.unique(mask[curr_batch].flatten())
-
+    for i in range(b):
+        unique_classes = torch.unique(mask[i])
         if deterministic:
-            selected_class = unique[0]
+            selected_class = unique_classes[0]
         else:
-            random_index = torch.randint(0, len(unique), (1,)).item()
-            selected_class = unique[random_index]
+            selected_class = unique_classes[torch.randint(len(unique_classes), (1,)).item()]
         selected_classes.append(selected_class)
 
-        possible_prompts = mask[curr_batch] == selected_class
-        possible_prompts_indices = torch.nonzero(possible_prompts)
+        class_mask = mask[i] == selected_class
+        indices = torch.nonzero(class_mask, as_tuple=False)
 
         if deterministic:
-            prompt_idx = 0
+            selected_index = indices[0]
         else:
-            prompt_idx = torch.randperm(possible_prompts_indices.size(0))[0]
-        selected_prompts.append(possible_prompts_indices[prompt_idx])
+            selected_index = indices[torch.randint(len(indices), (1,)).item()]
+        selected_prompts.append(selected_index)
+        selected_masks.append(class_mask)
 
-        curr_mask = mask[curr_batch] == selected_class
-        selected_masks.append(curr_mask)
-
-    selected_prompts = torch.stack(selected_prompts, 0)
-    selected_classes = torch.tensor(selected_classes).int()
-    selected_masks = torch.stack(selected_masks, 0)
-    return selected_prompts, selected_masks, selected_classes
+    selected_prompts = torch.stack(selected_prompts, dim=0).unsqueeze(1)  # Note: here n_prompts=1
+    selected_masks = torch.stack(selected_masks, dim=0)
+    selected_classes = torch.tensor(selected_classes, device=device)
+    return (
+        selected_prompts,  # (b,n_prompts,2)
+        selected_masks,  # (b,h,w)
+        selected_classes,  # (b,)
+    )
 
 
 def downsample_mask(mask, target_dim):
@@ -182,20 +200,38 @@ def downsample_mask(mask, target_dim):
 def get_simple_data(b=1, h=224, w=224):
     img = torch.zeros(b, 3, h, w)
     mask = torch.zeros(b, h, w)
+    step = 75
 
-    img[:, :, : h // 2, :] = 1
-    mask[:, : h // 2, :] = 1
+    img[:, :, :step, :] = 0
+    mask[:, :step, :] = 0
+
+    img[:, :, step : 2 * step, :] = 1
+    mask[:, step : 2 * step, :] = 1
+
+    img[:, :, 2 * step :, :] = 2
+    mask[:, 2 * step :, :] = 2
+    plot_tensor_to_file(mask[0], filename="original_mask.png")
     return img, mask
 
 
-def plot_tensor_to_file(tensor, filename="tmp"):
+def plot_tensor_to_file(tensor, p=[-1, -1], v=-1, filename="tmp"):
     tensor = tensor.cpu()
-    if tensor.shape == 3:
+    if tensor.ndim == 3:
         tensor = tensor.permute(1, 2, 0)
 
     print("Uniques", torch.unique(tensor))
     tensor = tensor.numpy()
+
     plt.figure()
     plt.imshow(tensor)
+
+    if p is not None:
+        plt.plot(p[0], p[1], "x", markersize=10, color="red")
+
+    # Add axis labels
+    plt.xlabel("X-axis")
+    plt.ylabel("Y-axis")
+    plt.title(p)
+
     plt.savefig(f"tmp/{filename}.png")
     plt.close()

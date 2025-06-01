@@ -63,7 +63,7 @@ class Trainer:
         self.train_loader = DataLoader(
             self.train_dataset,
             batch_size=data_config["batch_size"],
-            shuffle=True,
+            shuffle=False,
         )
         self.val_loader = DataLoader(
             self.val_dataset,
@@ -92,6 +92,18 @@ class Trainer:
         self.loss_fn = loss_fn.to(self.device)
         self.logger.info(f"Loss function {self.loss_fn}")
 
+    def prepare_inputs(self, gt_masks, deterministic=False, img_size=(224, 224)):
+        selected_prompts, selected_masks, selected_classes = get_prompt_from_gtmask(
+            gt_masks, deterministic=deterministic
+        )
+        selected_prompts = selected_prompts.float().to(self.device)
+        selected_masks = selected_masks.to(self.device)
+
+        selected_prompts_norm = torch.zeros_like(selected_prompts)
+        selected_prompts_norm[..., 0] = selected_prompts[..., 0] / img_size[0]
+        selected_prompts_norm[..., 1] = selected_prompts[..., 1] / img_size[1]
+        return selected_prompts_norm, selected_masks
+
     def train(self):
         for curr_epoch in range(self.optim_config["num_epochs"]):
             self.epoch = curr_epoch
@@ -106,8 +118,8 @@ class Trainer:
                 data = data.to(self.device)
                 gt_masks = gt_masks.to(self.device)
 
-                selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
-                pred_masks, iou = self.model(data, selected_prompts)
+                selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
+                pred_masks, iou = self.model(data, selected_prompts_norm)
                 loss = self.loss_fn(selected_masks, pred_masks, iou)
                 loss.backward()
                 self.optimizer.step()
@@ -115,16 +127,6 @@ class Trainer:
                 if (n_iter + 1) % eval_every_iter == 0:
                     self.evaluate_model(n_iter=n_iter)
         self.save_checkpoint()
-
-    def prepare_inputs(self, gt_masks, deterministic=False, normalize_prompts=True, img_size=(224, 224)):
-        selected_prompts, selected_masks, _ = get_prompt_from_gtmask(gt_masks, deterministic=deterministic)
-        selected_prompts = selected_prompts.unsqueeze(1).to(self.device)
-        selected_masks = selected_masks.to(self.device)
-        selected_prompts = selected_prompts.float()
-        if normalize_prompts:
-            selected_prompts[..., 0] /= img_size[0]
-            selected_prompts[..., 1] /= img_size[1]
-        return selected_prompts, selected_masks
 
     def evaluate_model(self, n_iter, max_num_iter=3):
         self.model.eval()
@@ -136,11 +138,11 @@ class Trainer:
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
-            selected_prompts, selected_masks = self.prepare_inputs(gt_masks)
-            pred_masks, iou = self.model(data, selected_prompts)
+            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
+            pred_masks, iou = self.model(data, selected_prompts_norm)
             batch_id = 0
             plot_mask_predictions(
-                data[batch_id], pred_masks[batch_id], prompt=selected_prompts[batch_id, 0], filename=f"tmp.png"
+                data[batch_id], pred_masks[batch_id], prompt=selected_prompts_norm[batch_id, 0], filename=f"tmp.png"
             )
 
         self.model.train()
@@ -155,8 +157,8 @@ class Trainer:
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
-            selected_prompts, selected_masks = self.prepare_inputs(gt_masks, deterministic=False)
-            pred_masks, iou = self.model(data, selected_prompts)
+            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks, deterministic=False)
+            pred_masks, iou = self.model(data, selected_prompts_norm)
             loss = self.loss_fn(selected_masks, pred_masks, iou)
             print(
                 f"iter {i}, loss {loss}, pred_masks max: {pred_masks.max()} min: {pred_masks.min()} avg: {pred_masks.mean()}"
@@ -173,7 +175,7 @@ class Trainer:
                     gt_masks[batch_id],
                     selected_masks[batch_id],
                     pred_masks[batch_id],
-                    prompt=selected_prompts[batch_id, 0],
+                    prompt=selected_prompts_norm[batch_id, 0],
                     # filename=f"tmp/tmp_{str(i).zfill(6)}.png",
                     filename=f"tmp/tmp.png",
                 )
