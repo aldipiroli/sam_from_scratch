@@ -6,7 +6,7 @@ import torch
 from model.loss_functions import DiceLoss
 
 
-def test_get_prompt_from_gtmask():
+def test_dice_loss():
     loss_fn = DiceLoss()
     b = 1
 
@@ -35,5 +35,5 @@ def test_get_prompt_from_gtmask():
 
 
 if __name__ == "__main__":
-    test_get_prompt_from_gtmask()
+    test_dice_loss()
     print("Tests passed!")

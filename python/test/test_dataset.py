@@ -4,7 +4,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pascal_voc_dataset.pascal_voc_dataset import PascalVOCDataset
 from torch.utils.data import DataLoader
-from utils.misc import save_image_with_mask
 
 
 def test_tiny_imagenet_dataset(skip=True):
@@ -19,7 +18,6 @@ def test_tiny_imagenet_dataset(skip=True):
         images, masks = next(it)
         assert images.shape == (batch_size, 3, 224, 224)
         assert masks.shape == (batch_size, 224, 224)
-        save_image_with_mask(images[0], masks[0], "tmp.png")
 
 
 if __name__ == "__main__":

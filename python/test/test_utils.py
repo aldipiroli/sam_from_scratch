@@ -8,11 +8,12 @@ from utils.misc import downsample_mask, get_prompt_from_gtmask
 
 def test_get_prompt_from_gtmask():
     b = 2
+    num_prompts = 1
     mask = torch.zeros(b, 244, 244)
     mask[0, 10, 10] = 1
     mask[0, 10, 11] = 2
     selected_prompts, selected_masks, selected_classes = get_prompt_from_gtmask(mask)
-    assert selected_prompts.shape == (b, 2)
+    assert selected_prompts.shape == (b, num_prompts, 2)
     assert selected_masks.shape == mask.shape
     assert selected_classes.shape == (b,)
     for c in selected_classes:
