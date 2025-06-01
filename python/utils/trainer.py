@@ -108,9 +108,9 @@ class Trainer:
         for curr_epoch in range(self.optim_config["num_epochs"]):
             self.epoch = curr_epoch
             self.train_one_epoch()
-            self.evaluate_model()
+            self.evaluate_model(n_iter=0)
 
-    def train_one_epoch(self, eval_every_iter=1):
+    def train_one_epoch(self, eval_every_iter=25):
         self.model.train()
         with tqdm(enumerate(self.train_loader), desc=f"Epoch {self.epoch}") as pbar:
             for n_iter, (data, gt_masks) in pbar:
@@ -125,12 +125,12 @@ class Trainer:
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
                 if (n_iter + 1) % eval_every_iter == 0:
-                    self.evaluate_model(n_iter=n_iter)
+                    self.evaluate_model()
         self.save_checkpoint()
 
-    def evaluate_model(self, n_iter, max_num_iter=3):
+    def evaluate_model(self, max_num_iter=3):
         self.model.eval()
-        for n_iter, (data, gt_masks) in enumerate(self.val_loader):
+        for n_iter, (data, gt_masks) in enumerate(self.train_loader):
             if n_iter > max_num_iter:
                 break
 
@@ -141,8 +141,14 @@ class Trainer:
             selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
             pred_masks, iou = self.model(data, selected_prompts_norm)
             batch_id = 0
+            pred_masks = torch.sigmoid(pred_masks)
             plot_mask_predictions(
-                data[batch_id], pred_masks[batch_id], prompt=selected_prompts_norm[batch_id, 0], filename=f"tmp.png"
+                data[batch_id],
+                gt_masks[batch_id],
+                selected_masks[batch_id],
+                pred_masks[batch_id],
+                prompt=selected_prompts_norm[batch_id, 0],
+                filename=f"tmp/tmp_{str(n_iter).zfill(6)}.png",
             )
 
         self.model.train()
