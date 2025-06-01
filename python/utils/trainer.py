@@ -16,6 +16,7 @@ class Trainer:
         self.ckpt_dir = Path(config["CKPT_DIR"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.device = get_device()
+        self.artifacts_img_dir = Path(config["IMG_OUT_DIR"])
 
     def set_model(self, model):
         self.model = model
@@ -212,6 +213,5 @@ class Trainer:
             pred_ious[batch_id],
             actual_iou[batch_id],
             prompt=selected_prompts_norm[batch_id, 0],
-            filename=f"tmp/tmp_{str(i).zfill(6)}.png",
-            # filename=f"tmp/tmp.png",
+            filename=f"{self.artifacts_img_dir}/tmp_{str(i).zfill(4)}.png",
         )
