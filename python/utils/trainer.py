@@ -17,6 +17,7 @@ class Trainer:
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.device = get_device()
         self.artifacts_img_dir = Path(config["IMG_OUT_DIR"])
+        self.artifacts_img_dir.mkdir(parents=True, exist_ok=True)
 
     def set_model(self, model):
         self.model = model
