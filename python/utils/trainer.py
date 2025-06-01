@@ -63,7 +63,7 @@ class Trainer:
         self.train_loader = DataLoader(
             self.train_dataset,
             batch_size=data_config["batch_size"],
-            shuffle=False,
+            shuffle=True,
         )
         self.val_loader = DataLoader(
             self.val_dataset,

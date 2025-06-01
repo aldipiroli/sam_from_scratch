@@ -2,6 +2,11 @@ CKPT_DIR: "../artifacts/ckpts"
 LOG_DIR: "../artifacts/logs"
 IMG_OUT_DIR: "../artifacts/img"
 MODEL:
+  embed_size: 256
+  num_output_tokens: 1
+  num_decoder_layers: 1
+  num_frequencies: 1
+  dropout: 0.1
   img_size: [3, 256, 256]
 DATA:
   root: "../data"

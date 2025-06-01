@@ -23,12 +23,13 @@ class ViTB16(nn.Module):
 
 
 class ImageEncoder(nn.Module):
-    def __init__(self, frozen=True, original_embed_size=768, target_embed_size=256):
+    def __init__(self, frozen=True, target_embed_size=256):
         super(ImageEncoder, self).__init__()
         self.encoder = ViTB16()
         self.frozen = frozen
+        self.original_embed_size = 768
         self.encoder.eval()
-        self.embed_proj = nn.Linear(original_embed_size, target_embed_size)
+        self.embed_proj = nn.Linear(self.original_embed_size, target_embed_size)
 
     def forward(self, x):
         if self.frozen:
@@ -179,13 +180,13 @@ class MaskDecoderLayer(nn.Module):
 
 
 class MaskDecoder(nn.Module):
-    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, resulting_patch_size=14, num_output_tokens=4):
+    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, num_output_tokens=4):
         super(MaskDecoder, self).__init__()
+        self.resulting_patch_size = 14  # h//patch_size (based on ViTB16)
         self.embed_size = embed_size
-        self.resulting_patch_size = resulting_patch_size  # h//patch_size
         self.num_output_tokens = num_output_tokens
         self.decoder_layers = torch.nn.ModuleList(
-            [MaskDecoderLayer(embed_size=256, dropout=dropout) for _ in range(num_decoder_layers)]
+            [MaskDecoderLayer(embed_size=embed_size, dropout=dropout) for _ in range(num_decoder_layers)]
         )
         self.upsample = nn.Sequential(
             nn.ConvTranspose2d(embed_size, embed_size, kernel_size=2, stride=2),
@@ -238,36 +239,32 @@ class MaskDecoder(nn.Module):
 class SimpleMaskDecoder(nn.Module):
     def __init__(self):
         super().__init__()
-        # Project the 256-dimensional feature to a flattened 56x56 image
         self.fc = nn.Linear(256, 56 * 56)
-        # Optional: final conv layer to convert to 1 channel (e.g., if stacking multiple inputs)
         self.final_conv = nn.Conv2d(1, 1, kernel_size=1)
 
     def forward(self, x):
-        # x: (b, 2, 256)
-        x = x.mean(dim=0, keepdim=True)  # shape: (1, 2, 256)
-        x = self.fc(x)  # shape: (1, 2, 3136)
-        x = x.mean(dim=1)  # aggregate over the 2 inputs → (1, 3136)
+        x = x.mean(dim=0, keepdim=True)
+        x = self.fc(x)
+        x = x.mean(dim=1)
         x = x.view(1, 1, 56, 56)
         return x
 
 
 class SAM(nn.Module):
-    def __init__(self, embed_size=256, num_output_tokens=4, num_decoder_layers=2):
+    def __init__(self, embed_size=256, num_output_tokens=1, num_decoder_layers=1, num_frequencies=1, dropout=0.1):
         super(SAM, self).__init__()
         self.embed_size = embed_size
         self.num_output_tokens = num_output_tokens
-        self.image_encoder = ImageEncoder(frozen=True)
-        self.prompt_encoder = PointPromptEconder(embed_size=embed_size)
+        self.image_encoder = ImageEncoder(frozen=True, target_embed_size=embed_size)
+        self.prompt_encoder = PointPromptEconder(embed_size=embed_size, num_frequencies=num_frequencies)
         self.output_token = nn.parameter.Parameter(data=torch.zeros(1, num_output_tokens, 1))
 
         self.mask_decoder = MaskDecoder(
             num_decoder_layers=num_decoder_layers,
             embed_size=embed_size,
-            dropout=0.1,
+            dropout=dropout,
             num_output_tokens=num_output_tokens,
         )
-        # self.proj = SimpleMaskDecoder()
 
     def forward(self, img, prompt):
         # img embedding
@@ -281,8 +278,6 @@ class SAM(nn.Module):
 
         # mask decoder
         masks, iou = self.mask_decoder(tokens, img_embed)
-        # masks = self.proj(tokens)
-        # iou = masks
         return masks, iou
 
 
