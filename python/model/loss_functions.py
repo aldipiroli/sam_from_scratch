@@ -35,16 +35,34 @@ class SAMLoss(nn.Module):
     def __init__(self):
         super(SAMLoss, self).__init__()
 
-    def forward(self, gt_masks, pred_masks, iou):
+    def forward(self, gt_masks, pred_masks, pred_iou):
         b, num_masks, pred_h, pred_w = pred_masks.shape
         gt_mask_down = downsample_mask(gt_masks, target_dim=(pred_h, pred_w)).to(pred_masks.device)
-
         gt_masks = gt_mask_down.float().unsqueeze(1)  # (B, 1, H, W)
 
         bce_losses = F.binary_cross_entropy_with_logits(
             pred_masks, gt_masks.expand(-1, num_masks, -1, -1), reduction="none"
         )  # (B, N, H, W)
         bce_losses = bce_losses.mean(dim=(2, 3))  # (B, N)
+        min_bce_loss, _ = bce_losses.min(dim=1)  # (B,)
 
-        min_losses, _ = bce_losses.min(dim=1)  # (B,)
-        return min_losses.mean()
+        # iou loss
+        mse_loss_fn = nn.MSELoss()
+        iou_gt_pred = compute_iou_between_masks(gt_masks, pred_masks)
+        iou_loss = mse_loss_fn(iou_gt_pred, pred_iou)
+
+        tot_loss = min_bce_loss + iou_loss
+        return tot_loss.mean()
+
+
+def compute_iou_between_masks(gt_mask, pred_masks):
+    gt_mask = gt_mask.bool()
+    pred_masks = pred_masks.bool()
+
+    gt_mask_exp = gt_mask.expand(-1, pred_masks.shape[0], -1, -1)
+    intersection = (gt_mask_exp & pred_masks).sum(dim=(2, 3)).float()  # (B, N)
+    union = (gt_mask_exp | pred_masks).sum(dim=(2, 3)).float()  # (B, N)
+
+    # Avoid division by zero
+    iou = intersection / (union + 1e-6)
+    return iou

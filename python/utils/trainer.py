@@ -1,9 +1,10 @@
 from pathlib import Path
 
 import torch
+from model.loss_functions import compute_iou_between_masks
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils.misc import get_device, get_prompt_from_gtmask, plot_mask_predictions
+from utils.misc import downsample_mask, get_device, get_prompt_from_gtmask, plot_mask_predictions
 
 
 class Trainer:
@@ -108,9 +109,9 @@ class Trainer:
         for curr_epoch in range(self.optim_config["num_epochs"]):
             self.epoch = curr_epoch
             self.train_one_epoch()
-            self.evaluate_model(n_iter=0)
+            self.evaluate_model()
 
-    def train_one_epoch(self, eval_every_iter=25):
+    def train_one_epoch(self, eval_every_iter=150):
         self.model.train()
         with tqdm(enumerate(self.train_loader), desc=f"Epoch {self.epoch}") as pbar:
             for n_iter, (data, gt_masks) in pbar:
@@ -119,8 +120,8 @@ class Trainer:
                 gt_masks = gt_masks.to(self.device)
 
                 selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
-                pred_masks, iou = self.model(data, selected_prompts_norm)
-                loss = self.loss_fn(selected_masks, pred_masks, iou)
+                pred_masks, pred_ious = self.model(data, selected_prompts_norm)
+                loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
@@ -128,9 +129,11 @@ class Trainer:
                     self.evaluate_model()
         self.save_checkpoint()
 
-    def evaluate_model(self, max_num_iter=3):
+    def evaluate_model(self, max_num_iter=100, max_plot_iter=3):
+        self.logger.info("Running Evaluation...")
         self.model.eval()
-        for n_iter, (data, gt_masks) in enumerate(self.train_loader):
+        all_iou = []
+        for n_iter, (data, gt_masks) in enumerate(self.val_loader):
             if n_iter > max_num_iter:
                 break
 
@@ -139,18 +142,17 @@ class Trainer:
             gt_masks = gt_masks.to(self.device)
 
             selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
-            pred_masks, iou = self.model(data, selected_prompts_norm)
-            batch_id = 0
-            pred_masks = torch.sigmoid(pred_masks)
-            plot_mask_predictions(
-                data[batch_id],
-                gt_masks[batch_id],
-                selected_masks[batch_id],
-                pred_masks[batch_id],
-                prompt=selected_prompts_norm[batch_id, 0],
-                filename=f"tmp/tmp_{str(n_iter).zfill(6)}.png",
-            )
+            pred_masks, pred_ious = self.model(data, selected_prompts_norm)
 
+            # compute iou eval
+            gt_masks_down = downsample_mask(gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
+            actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), pred_masks)
+            all_iou.append(actual_iou)
+            if n_iter < max_plot_iter:
+                self.plot_predictions(
+                    gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=n_iter
+                )
+        self.logger.info(f"Epoch {self.epoch} avg IoU {torch.mean(torch.tensor(all_iou)).item():.2f}")
         self.model.train()
 
     def overfit_one_batch(self):
@@ -164,8 +166,8 @@ class Trainer:
             gt_masks = gt_masks.to(self.device)
 
             selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks, deterministic=False)
-            pred_masks, iou = self.model(data, selected_prompts_norm)
-            loss = self.loss_fn(selected_masks, pred_masks, iou)
+            pred_masks, pred_ious = self.model(data, selected_prompts_norm)
+            loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
             print(
                 f"iter {i}, loss {loss}, pred_masks max: {pred_masks.max()} min: {pred_masks.min()} avg: {pred_masks.mean()}"
             )
@@ -174,16 +176,8 @@ class Trainer:
             self.optimizer.step()
             # self.scheduler.step()
             if (i % 10) == 0:
-                pred_masks = torch.sigmoid(pred_masks)
-                batch_id = 0
-                plot_mask_predictions(
-                    data[batch_id],
-                    gt_masks[batch_id],
-                    selected_masks[batch_id],
-                    pred_masks[batch_id],
-                    prompt=selected_prompts_norm[batch_id, 0],
-                    # filename=f"tmp/tmp_{str(i).zfill(6)}.png",
-                    filename=f"tmp/tmp.png",
+                self.plot_predictions(
+                    gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=i
                 )
 
         self.save_checkpoint()
@@ -204,3 +198,20 @@ class Trainer:
             self.logger.info(f"no_grad_name {no_grad_name}")
             raise ValueError("layers without gradient are present")
         assert len(no_grad_name) == 0
+
+    def plot_predictions(
+        self, gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=0
+    ):
+        gt_masks_down = downsample_mask(gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
+        actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), pred_masks)
+        plot_mask_predictions(
+            data[batch_id],
+            gt_masks[batch_id],
+            selected_masks[batch_id],
+            pred_masks[batch_id],
+            pred_ious[batch_id],
+            actual_iou[batch_id],
+            prompt=selected_prompts_norm[batch_id, 0],
+            filename=f"tmp/tmp_{str(i).zfill(6)}.png",
+            # filename=f"tmp/tmp.png",
+        )

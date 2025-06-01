@@ -203,7 +203,7 @@ class MaskDecoder(nn.Module):
             nn.Linear(embed_size, embed_size),
         )
 
-        self.mlp_iou = nn.Sequential(nn.Linear(embed_size, 1))
+        self.mlp_iou = nn.Sequential(nn.Linear(embed_size, self.num_output_tokens))
 
     def forward(self, tokens, img_embed):
         for curr_decoder in self.decoder_layers:
@@ -230,8 +230,11 @@ class MaskDecoder(nn.Module):
         masks_reshape = masks.reshape(
             b, self.num_output_tokens, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4)
         )
-        iou_token = token_to_img_res[:, : self.num_output_tokens, :]
-        iou = self.mlp_iou(iou_token).squeeze()
+        iou_token = token_to_img_res[:, self.num_output_tokens, :]
+        iou = self.mlp_iou(iou_token)
+
+        masks_reshape = torch.sigmoid(masks_reshape)
+        iou = torch.sigmoid(iou)
         # TODO: handle single/multi prompt cases
         return masks_reshape, iou
 
