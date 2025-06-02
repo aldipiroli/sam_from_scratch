@@ -1,6 +1,7 @@
 import os
 import sys
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -153,6 +154,7 @@ def test_sam():
     assert iou.requires_grad
 
 
+@pytest.mark.skip()
 def test_gradient_flow(skip=True):
     if skip:
         return True
