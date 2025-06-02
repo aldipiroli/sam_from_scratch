@@ -8,9 +8,12 @@ MODEL:
   num_frequencies: 1
   dropout: 0.1
   img_size: [3, 256, 256]
+  loss_weights:
+    mask_pred_loss_weight: 1
+    iou_loss_weight: 0
 DATA:
   root: "../data"
-  batch_size: 8
+  batch_size: 128
 OPTIM:
   optimizer: "AdamW"
   lr: 0.0001

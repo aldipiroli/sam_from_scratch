@@ -25,9 +25,10 @@ def train():
     val_dataset = PascalVOCDataset(root_dir=config["DATA"]["root"], split="val")
     trainer.set_dataset(train_dataset, val_dataset, data_config=config["DATA"])
     trainer.set_optimizer(optim_config=config["OPTIM"])
-    trainer.set_loss_function(loss_fn=SAMLoss())
+    trainer.set_loss_function(loss_fn=SAMLoss(loss_weights=config["MODEL"]["loss_weights"]))
     trainer.save_checkpoint()
     # trainer.load_latest_checkpoint()
+    # trainer.overfit_one_batch()
     trainer.train()
 
 

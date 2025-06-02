@@ -193,19 +193,15 @@ class Trainer:
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
-            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks, deterministic=False)
+            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
             pred_masks, pred_ious = self.model(data, selected_prompts_norm)
+            pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious)
             loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
-            print(
-                f"iter {i}, loss {loss}, pred_masks max: {pred_masks.max()} min: {pred_masks.min()} avg: {pred_masks.mean()}"
-            )
             loss.backward()
-            # self.gradient_sanity_check()
             self.optimizer.step()
-            # self.scheduler.step()
             if (i % 10) == 0:
                 self.plot_predictions(
-                    gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=i
+                    gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=0
                 )
 
         self.save_checkpoint()
@@ -236,7 +232,7 @@ class Trainer:
             data[batch_id],
             gt_masks[batch_id],
             selected_masks[batch_id],
-            self.upsample_preds(pred_masks[batch_id]),
+            pred_masks[batch_id],
             pred_ious[batch_id],
             actual_iou[batch_id],
             prompt=selected_prompts_norm[batch_id, 0],

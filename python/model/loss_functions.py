@@ -32,8 +32,9 @@ class DiceLoss(nn.Module):
 
 
 class SAMLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, loss_weights):
         super(SAMLoss, self).__init__()
+        self.loss_weights = loss_weights
 
     def forward(self, gt_masks, pred_masks, pred_iou):
         b, num_masks, pred_h, pred_w = pred_masks.shape
@@ -51,7 +52,9 @@ class SAMLoss(nn.Module):
         iou_gt_pred = compute_iou_between_masks(gt_masks, pred_masks)
         iou_loss = mse_loss_fn(iou_gt_pred, pred_iou)
 
-        tot_loss = min_bce_loss + iou_loss
+        tot_loss = (min_bce_loss * self.loss_weights["mask_pred_loss_weight"]) + (
+            iou_loss * self.loss_weights["iou_loss_weight"]
+        )
         return tot_loss.mean()
 
 
