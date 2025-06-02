@@ -11,3 +11,5 @@ pip install -r requirements.txt
 cd python 
 python train.py
 ```
+
+> Note: this repository is just for learning purposes and does not aim at the performance of the [original repository](https://github.com/facebookresearch/segment-anything). Additionally, some features from the original model are not implemented (i.e., box/test prompting), and the training dataset is the [Pascal VOC 2012 dataset](https://cocodataset.org/index.htm#home).
