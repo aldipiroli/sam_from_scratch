@@ -139,9 +139,9 @@ class Trainer:
                 data = data.to(self.device)
                 all_gt_masks = all_gt_masks.to(self.device)
 
-                prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks)
+                prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks, deterministic=False)
                 pred_masks, pred_ious = self.model(data, prompts_norm)
-                loss = self.loss_fn(gt_masks=prompt_gt_masks, pred_masks=pred_masks, pred_iou=pred_ious)
+                loss = self.loss_fn(gt_masks=prompt_gt_masks, pred_masks=pred_masks, pred_ious=pred_ious)
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
@@ -165,9 +165,9 @@ class Trainer:
             pred_masks, pred_ious = self.model(data, prompts_norm)
 
             # compute iou eval
-            gt_masks_down = downsample_mask(all_gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
+            gt_masks_down = downsample_mask(prompt_gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
             actual_iou = compute_iou_between_masks(gt_masks_down, pred_masks)
-            all_iou.append(actual_iou)
+            all_iou.append(actual_iou.mean())
             if n_iter < max_plot_iter:
                 self.plot_predictions(
                     all_gt_masks=all_gt_masks,
