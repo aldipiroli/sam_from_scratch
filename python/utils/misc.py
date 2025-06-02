@@ -98,6 +98,7 @@ def plot_mask_predictions(
     prompt=None,
     filename="tmp.png",
     img_size=(224, 224),
+    verbose=True,
 ):
     image = np.transpose(image.detach().cpu().float().numpy(), (1, 2, 0))
     original_masks = original_masks.detach().cpu().float().numpy()
@@ -168,9 +169,11 @@ def plot_mask_predictions(
             ax.plot(px, py, "x", markersize=10, color="red")
         fig.colorbar(ax.images[0], ax=ax)
 
-    fig.suptitle(prompt_output, fontsize=16)
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fig.suptitle(f"{prompt_output}_{now}", fontsize=16)
     plt.savefig(filename, bbox_inches="tight", pad_inches=0)
-    print(f"Saved Image: {filename}")
+    if verbose:
+        print(f"Saved Image: {filename}")
     plt.close()
 
 
@@ -228,7 +231,6 @@ def get_simple_data(b=1, h=224, w=224):
 
     img[:, :, 2 * step :, :] = 2
     mask[:, 2 * step :, :] = 2
-    plot_tensor_to_file(mask[0], filename="original_mask.png")
     return img, mask
 
 
@@ -236,8 +238,6 @@ def plot_tensor_to_file(tensor, p=[-1, -1], v=-1, filename="tmp"):
     tensor = tensor.cpu()
     if tensor.ndim == 3:
         tensor = tensor.permute(1, 2, 0)
-
-    print("Uniques", torch.unique(tensor))
     tensor = tensor.numpy()
 
     plt.figure()

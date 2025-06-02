@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from model.loss_functions import compute_iou_between_masks
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils.misc import downsample_mask, get_device, get_prompt_from_gtmask, plot_mask_predictions
+from utils.misc import downsample_mask, get_device, get_prompt_from_gtmask, get_simple_data, plot_mask_predictions
 
 
 class Trainer:
@@ -115,7 +115,7 @@ class Trainer:
         iou_pred = torch.sigmoid(iou_pred)
 
         if apply_threshold:
-            mask_pred = mask_pred > self.pred_threshold
+            mask_pred = (mask_pred > self.pred_threshold).float()
         return mask_pred, iou_pred
 
     def upsample_preds(self, mask_pred):
@@ -140,7 +140,6 @@ class Trainer:
 
                 selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
                 pred_masks, pred_ious = self.model(data, selected_prompts_norm)
-                pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious)
                 loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
                 loss.backward()
                 self.optimizer.step()
@@ -163,7 +162,6 @@ class Trainer:
 
             selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
             pred_masks, pred_ious = self.model(data, selected_prompts_norm)
-            pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious, apply_threshold=True)
 
             # compute iou eval
             gt_masks_down = downsample_mask(gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
@@ -171,7 +169,7 @@ class Trainer:
             all_iou.append(actual_iou)
             if n_iter < max_plot_iter:
                 self.plot_predictions(
-                    gt_masks,
+                    selected_masks,
                     pred_masks,
                     data,
                     selected_masks,
@@ -186,22 +184,23 @@ class Trainer:
     def overfit_one_batch(self):
         self.model.train()
         it = iter(self.train_loader)
-        data, gt_masks = next(it)
-        # data, gt_masks = get_simple_data(1, 224, 224)
+        # data, gt_masks = next(it)
+        data, gt_masks = get_simple_data(1, 224, 224)
         for i in range(1000000):
             self.optimizer.zero_grad()
             data = data.to(self.device)
             gt_masks = gt_masks.to(self.device)
 
-            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
+            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks, deterministic=True)
             pred_masks, pred_ious = self.model(data, selected_prompts_norm)
-            pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious)
             loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
+            print(f"Loss {loss.item():.6f}")
             loss.backward()
             self.optimizer.step()
             if (i % 10) == 0:
+                pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious, apply_threshold=True)
                 self.plot_predictions(
-                    gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=0
+                    selected_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=0
                 )
 
         self.save_checkpoint()

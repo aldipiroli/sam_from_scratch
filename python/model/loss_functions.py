@@ -43,7 +43,7 @@ class SAMLoss(nn.Module):
 
         bce_losses = F.binary_cross_entropy_with_logits(
             pred_masks, gt_masks.expand(-1, num_masks, -1, -1), reduction="none"
-        )  # (B, N, H, W)
+        )  # (n, num_masks, h, w)
         bce_losses = bce_losses.mean(dim=(2, 3))  # (B, N)
         min_bce_loss, _ = bce_losses.min(dim=1)  # (B,)
 
@@ -52,10 +52,10 @@ class SAMLoss(nn.Module):
         iou_gt_pred = compute_iou_between_masks(gt_masks, pred_masks)
         iou_loss = mse_loss_fn(iou_gt_pred, pred_iou)
 
-        tot_loss = (min_bce_loss * self.loss_weights["mask_pred_loss_weight"]) + (
-            iou_loss * self.loss_weights["iou_loss_weight"]
+        tot_loss = (min_bce_loss.sum() * self.loss_weights["mask_pred_loss_weight"]) + (
+            iou_loss.sum() * self.loss_weights["iou_loss_weight"]
         )
-        return tot_loss.mean()
+        return tot_loss
 
 
 def compute_iou_between_masks(gt_mask, pred_masks, threshold=0.5):
