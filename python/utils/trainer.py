@@ -144,6 +144,7 @@ class Trainer:
                 loss = self.loss_fn(gt_masks=prompt_gt_masks, pred_masks=pred_masks, pred_ious=pred_ious)
                 loss.backward()
                 self.optimizer.step()
+                self.scheduler.step()
                 pbar.set_postfix({"loss": loss.item()})
                 if (n_iter + 1) % eval_every_iter == 0:
                     self.evaluate_model()

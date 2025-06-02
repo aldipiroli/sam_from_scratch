@@ -203,6 +203,11 @@ class MaskDecoder(nn.Module):
             nn.GELU(),
             nn.Linear(embed_size, embed_size),
         )
+        self.mask_finteuer = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 3, kernel_size=3, padding=1),
+        )
 
         self.mlp_iou = nn.Sequential(nn.Linear(embed_size, self.num_output_masks))
 
@@ -231,6 +236,7 @@ class MaskDecoder(nn.Module):
         masks_reshape = masks.reshape(
             b, self.num_output_masks, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4)
         )
+        masks_reshape = self.mask_finteuer(masks_reshape)
         iou_token = token_to_img_res[:, self.num_output_tokens, :]
         iou = self.mlp_iou(iou_token)
 
