@@ -233,8 +233,6 @@ class MaskDecoder(nn.Module):
         iou_token = token_to_img_res[:, self.num_output_tokens, :]
         iou = self.mlp_iou(iou_token)
 
-        masks_reshape = torch.sigmoid(masks_reshape)
-        iou = torch.sigmoid(iou)
         # TODO: handle single/multi prompt cases
         return masks_reshape, iou
 
@@ -254,7 +252,14 @@ class SimpleMaskDecoder(nn.Module):
 
 
 class SAM(nn.Module):
-    def __init__(self, embed_size=256, num_output_tokens=1, num_decoder_layers=1, num_frequencies=1, dropout=0.1):
+    def __init__(
+        self,
+        embed_size=256,
+        num_output_tokens=1,
+        num_decoder_layers=1,
+        num_frequencies=1,
+        dropout=0.1,
+    ):
         super(SAM, self).__init__()
         self.embed_size = embed_size
         self.num_output_tokens = num_output_tokens

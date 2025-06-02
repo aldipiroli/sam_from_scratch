@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from model.loss_functions import compute_iou_between_masks
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -12,6 +13,8 @@ class Trainer:
         self.config = config
         self.logger = logger
         self.epoch = 0
+        self.pred_threshold = 0.5
+        self.img_size = config["MODEL"]["img_size"]
 
         self.ckpt_dir = Path(config["CKPT_DIR"])
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +98,7 @@ class Trainer:
         self.loss_fn = loss_fn.to(self.device)
         self.logger.info(f"Loss function {self.loss_fn}")
 
-    def prepare_inputs(self, gt_masks, deterministic=False, img_size=(224, 224)):
+    def prepare_inputs(self, gt_masks, deterministic=False):
         selected_prompts, selected_masks, selected_classes = get_prompt_from_gtmask(
             gt_masks, deterministic=deterministic
         )
@@ -103,9 +106,23 @@ class Trainer:
         selected_masks = selected_masks.to(self.device)
 
         selected_prompts_norm = torch.zeros_like(selected_prompts)
-        selected_prompts_norm[..., 0] = selected_prompts[..., 0] / img_size[0]
-        selected_prompts_norm[..., 1] = selected_prompts[..., 1] / img_size[1]
+        selected_prompts_norm[..., 0] = selected_prompts[..., 0] / self.img_size[1]
+        selected_prompts_norm[..., 1] = selected_prompts[..., 1] / self.img_size[2]
         return selected_prompts_norm, selected_masks
+
+    def postprocessor(self, mask_pred, iou_pred, apply_threshold=False):
+        mask_pred = torch.sigmoid(mask_pred)
+        iou_pred = torch.sigmoid(iou_pred)
+
+        if apply_threshold:
+            mask_pred = mask_pred > self.pred_threshold
+        return mask_pred, iou_pred
+
+    def upsample_preds(self, mask_pred):
+        mask_pred = F.interpolate(
+            mask_pred.unsqueeze(1).float(), size=(self.img_size[1], self.img_size[2]), mode="nearest"
+        ).squeeze(1)
+        return mask_pred
 
     def train(self):
         for curr_epoch in range(self.optim_config["num_epochs"]):
@@ -123,6 +140,7 @@ class Trainer:
 
                 selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
                 pred_masks, pred_ious = self.model(data, selected_prompts_norm)
+                pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious)
                 loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
                 loss.backward()
                 self.optimizer.step()
@@ -145,6 +163,7 @@ class Trainer:
 
             selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
             pred_masks, pred_ious = self.model(data, selected_prompts_norm)
+            pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious, apply_threshold=True)
 
             # compute iou eval
             gt_masks_down = downsample_mask(gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
@@ -152,7 +171,14 @@ class Trainer:
             all_iou.append(actual_iou)
             if n_iter < max_plot_iter:
                 self.plot_predictions(
-                    gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=n_iter
+                    gt_masks,
+                    pred_masks,
+                    data,
+                    selected_masks,
+                    pred_ious,
+                    selected_prompts_norm,
+                    batch_id=0,
+                    i=n_iter,
                 )
         self.logger.info(f"Epoch {self.epoch} avg IoU {torch.mean(torch.tensor(all_iou)).item():.2f}")
         self.model.train()
@@ -210,7 +236,7 @@ class Trainer:
             data[batch_id],
             gt_masks[batch_id],
             selected_masks[batch_id],
-            pred_masks[batch_id],
+            self.upsample_preds(pred_masks[batch_id]),
             pred_ious[batch_id],
             actual_iou[batch_id],
             prompt=selected_prompts_norm[batch_id, 0],

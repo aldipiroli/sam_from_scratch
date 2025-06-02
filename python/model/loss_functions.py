@@ -63,6 +63,5 @@ def compute_iou_between_masks(gt_mask, pred_masks, threshold=0.5):
     intersection = (gt_mask_exp & pred_mask_binary).sum(dim=(2, 3)).float()  # (B, N)
     union = (gt_mask_exp | pred_mask_binary).sum(dim=(2, 3)).float()  # (B, N)
 
-    # Avoid division by zero
     iou = intersection / (union + 1e-6)
     return iou
