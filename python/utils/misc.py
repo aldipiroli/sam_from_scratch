@@ -91,7 +91,7 @@ def get_overlayer_image(image_np, mask, alpha=0.7):
 def plot_mask_predictions(
     image,
     original_masks,
-    target_gt_mask,
+    prompt_gt_masks,
     pred_masks,
     pred_ious,
     actual_iou,
@@ -102,7 +102,7 @@ def plot_mask_predictions(
 ):
     image = np.transpose(image.detach().cpu().float().numpy(), (1, 2, 0))
     original_masks = original_masks.detach().cpu().float().numpy()
-    target_gt_mask = target_gt_mask.detach().cpu().float().numpy()
+    prompt_gt_masks = prompt_gt_masks.detach().cpu().float().numpy()
     pred_masks = pred_masks.detach().cpu().float().numpy()
     pred_ious = pred_ious.detach().cpu().float().numpy()
     actual_iou = actual_iou.detach().cpu().float().numpy()
@@ -144,10 +144,10 @@ def plot_mask_predictions(
 
     # GT Mask
     ax2 = fig.add_subplot(gs[0, 2])
-    im_gt = ax2.imshow(target_gt_mask, cmap="viridis")
+    im_gt = ax2.imshow(prompt_gt_masks, cmap="viridis")
     if prompt is not None:
         ax2.plot(px, py, "x", markersize=10, color="red")
-    ax2.set_title("Target GT Mask")
+    ax2.set_title("Prompt GT Mask")
     ax2.axis("off")
     fig.colorbar(im_gt, ax=ax2)
 

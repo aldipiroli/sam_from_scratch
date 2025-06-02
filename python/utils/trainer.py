@@ -133,14 +133,14 @@ class Trainer:
     def train_one_epoch(self, eval_every_iter=150):
         self.model.train()
         with tqdm(enumerate(self.train_loader), desc=f"Epoch {self.epoch}") as pbar:
-            for n_iter, (data, gt_masks) in pbar:
+            for n_iter, (data, all_gt_masks) in pbar:
                 self.optimizer.zero_grad()
                 data = data.to(self.device)
-                gt_masks = gt_masks.to(self.device)
+                all_gt_masks = all_gt_masks.to(self.device)
 
-                selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
-                pred_masks, pred_ious = self.model(data, selected_prompts_norm)
-                loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
+                prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks)
+                pred_masks, pred_ious = self.model(data, prompts_norm)
+                loss = self.loss_fn(prompt_gt_masks, pred_masks, pred_ious)
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
@@ -152,29 +152,29 @@ class Trainer:
         self.logger.info("Running Evaluation...")
         self.model.eval()
         all_iou = []
-        for n_iter, (data, gt_masks) in enumerate(self.val_loader):
+        for n_iter, (data, all_gt_masks) in enumerate(self.val_loader):
             if n_iter > max_num_iter:
                 break
 
             self.optimizer.zero_grad()
             data = data.to(self.device)
-            gt_masks = gt_masks.to(self.device)
+            all_gt_masks = all_gt_masks.to(self.device)
 
-            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks)
-            pred_masks, pred_ious = self.model(data, selected_prompts_norm)
+            prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks)
+            pred_masks, pred_ious = self.model(data, prompts_norm)
 
             # compute iou eval
-            gt_masks_down = downsample_mask(gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
+            gt_masks_down = downsample_mask(all_gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
             actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), pred_masks)
             all_iou.append(actual_iou)
             if n_iter < max_plot_iter:
                 self.plot_predictions(
-                    selected_masks,
+                    all_gt_masks,
                     pred_masks,
                     data,
-                    selected_masks,
+                    prompt_gt_masks,
                     pred_ious,
-                    selected_prompts_norm,
+                    prompts_norm,
                     batch_id=0,
                     i=n_iter,
                 )
@@ -185,22 +185,22 @@ class Trainer:
         self.model.train()
         it = iter(self.train_loader)
         # data, gt_masks = next(it)
-        data, gt_masks = get_simple_data(1, 224, 224)
+        data, all_gt_masks = get_simple_data(1, 224, 224)
         for i in range(1000000):
             self.optimizer.zero_grad()
             data = data.to(self.device)
-            gt_masks = gt_masks.to(self.device)
+            all_gt_masks = all_gt_masks.to(self.device)
 
-            selected_prompts_norm, selected_masks = self.prepare_inputs(gt_masks, deterministic=True)
-            pred_masks, pred_ious = self.model(data, selected_prompts_norm)
-            loss = self.loss_fn(selected_masks, pred_masks, pred_ious)
+            prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks, deterministic=True)
+            pred_masks, pred_ious = self.model(data, prompts_norm)
+            loss = self.loss_fn(prompt_gt_masks, pred_masks, pred_ious)
             print(f"Loss {loss.item():.6f}")
             loss.backward()
             self.optimizer.step()
             if (i % 10) == 0:
                 pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious, apply_threshold=True)
                 self.plot_predictions(
-                    selected_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=0
+                    all_gt_masks, pred_masks, data, prompt_gt_masks, pred_ious, prompts_norm, batch_id=0, i=0
                 )
 
         self.save_checkpoint()
@@ -223,17 +223,17 @@ class Trainer:
         assert len(no_grad_name) == 0
 
     def plot_predictions(
-        self, gt_masks, pred_masks, data, selected_masks, pred_ious, selected_prompts_norm, batch_id=0, i=0
+        self, gt_masks, prompt_gt_masks, data, selected_masks, pred_ious, prompts_norm, batch_id=0, i=0
     ):
-        gt_masks_down = downsample_mask(gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
-        actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), pred_masks)
+        gt_masks_down = downsample_mask(gt_masks, target_dim=(prompt_gt_masks.shape[-1], prompt_gt_masks.shape[-1]))
+        actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), prompt_gt_masks)
         plot_mask_predictions(
             data[batch_id],
             gt_masks[batch_id],
             selected_masks[batch_id],
-            pred_masks[batch_id],
+            prompt_gt_masks[batch_id],
             pred_ious[batch_id],
             actual_iou[batch_id],
-            prompt=selected_prompts_norm[batch_id, 0],
+            prompt=prompts_norm[batch_id, 0],
             filename=f"{self.artifacts_img_dir}/tmp_{str(i).zfill(4)}.png",
         )
