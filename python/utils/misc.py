@@ -90,8 +90,9 @@ def get_overlayer_image(image_np, mask, alpha=0.7):
 
 def plot_mask_predictions(
     image,
-    original_masks,
+    all_gt_masks,
     prompt_gt_masks,
+    prompt_gt_masks_down,
     pred_masks,
     pred_ious,
     actual_iou,
@@ -101,8 +102,9 @@ def plot_mask_predictions(
     verbose=True,
 ):
     image = np.transpose(image.detach().cpu().float().numpy(), (1, 2, 0))
-    original_masks = original_masks.detach().cpu().float().numpy()
+    all_gt_masks = all_gt_masks.detach().cpu().float().numpy()
     prompt_gt_masks = prompt_gt_masks.detach().cpu().float().numpy()
+    prompt_gt_masks_down = prompt_gt_masks_down.detach().cpu().float().numpy()
     pred_masks = pred_masks.detach().cpu().float().numpy()
     pred_ious = pred_ious.detach().cpu().float().numpy()
     actual_iou = actual_iou.detach().cpu().float().numpy()
@@ -110,22 +112,24 @@ def plot_mask_predictions(
 
     if prompt is not None:
         prompt_np = prompt.detach().cpu()
+        prompt_id = 0
+        prompt_np = prompt_np[prompt_id]
         px, py = int(prompt_np[1] * img_size[0]), int(prompt_np[0] * img_size[1])
         prompt_output = (
-            f"Prompt value: {original_masks[px, py]:.2f}, "
-            f"Unique: {np.unique(original_masks)}, Sum {np.sum(original_masks)}"
+            f"Prompt value: {all_gt_masks[px, py]:.2f}, "
+            f"Unique: {np.unique(all_gt_masks)}, Sum {np.sum(all_gt_masks)}"
         )
     else:
         px, py = None, None
-        prompt_output = f"Unique: {np.unique(original_masks)}, Sum {np.sum(original_masks)}"
+        prompt_output = f"Unique: {np.unique(all_gt_masks)}, Sum {np.sum(all_gt_masks)}"
 
-    n_uniques = len(np.unique(original_masks))
-    max_cols = max(3 + n_preds, n_uniques)  # Enough columns for all pred masks and unique masks
+    n_uniques = len(np.unique(all_gt_masks))
+    max_cols = max(4 + n_preds, n_uniques)
     fig = plt.figure(figsize=(5 * max_cols, 10))
     gs = gridspec.GridSpec(2, max_cols, figure=fig)
 
     # Input Image
-    overlay, _ = get_overlayer_image(image, original_masks, alpha=0.7)
+    overlay, _ = get_overlayer_image(image, all_gt_masks, alpha=0.7)
     ax0 = fig.add_subplot(gs[0, 0])
     ax0.imshow(overlay)
     if prompt is not None:
@@ -135,7 +139,7 @@ def plot_mask_predictions(
 
     # Original Mask
     ax1 = fig.add_subplot(gs[0, 1])
-    m = ax1.imshow(original_masks)
+    m = ax1.imshow(all_gt_masks)
     if prompt is not None:
         ax1.plot(px, py, "x", markersize=10, color="red")
     ax1.set_title("Original Mask")
@@ -144,25 +148,33 @@ def plot_mask_predictions(
 
     # GT Mask
     ax2 = fig.add_subplot(gs[0, 2])
-    im_gt = ax2.imshow(prompt_gt_masks, cmap="viridis")
+    im_gt = ax2.imshow(prompt_gt_masks.squeeze(0), cmap="viridis")
     if prompt is not None:
         ax2.plot(px, py, "x", markersize=10, color="red")
     ax2.set_title("Prompt GT Mask")
     ax2.axis("off")
     fig.colorbar(im_gt, ax=ax2)
 
+    ax3 = fig.add_subplot(gs[0, 3])
+    im_gt = ax3.imshow(prompt_gt_masks_down.squeeze(0), cmap="viridis")
+    if prompt is not None:
+        ax3.plot(px, py, "x", markersize=10, color="red")
+    ax3.set_title("Prompt GT Mask Downsample")
+    ax3.axis("off")
+    fig.colorbar(im_gt, ax=ax3)
+
     # Predicted Masks
     for i in range(n_preds):
-        ax = fig.add_subplot(gs[0, 3 + i])
+        ax = fig.add_subplot(gs[0, 4 + i])
         im_pred = ax.imshow(pred_masks[i], cmap="viridis")
         ax.set_title(f"M {i+1}, Pred IoU {pred_ious[i].item():.2f} / {actual_iou[i].item():.2f}")
         ax.axis("off")
         fig.colorbar(im_pred, ax=ax)
 
     # Unique value masks in original
-    for i, u in enumerate(np.unique(original_masks)):
+    for i, u in enumerate(np.unique(all_gt_masks)):
         ax = fig.add_subplot(gs[1, i])
-        curr_mask = original_masks == u
+        curr_mask = all_gt_masks == u
         ax.set_title(f"Value {u}")
         ax.imshow(curr_mask, cmap="viridis")
         if prompt is not None:
@@ -171,7 +183,7 @@ def plot_mask_predictions(
 
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     fig.suptitle(f"{prompt_output}_{now}", fontsize=16)
-    plt.savefig(filename, bbox_inches="tight", pad_inches=0)
+    plt.savefig(filename, bbox_inches="tight")
     if verbose:
         print(f"Saved Image: {filename}")
     plt.close()
@@ -214,7 +226,7 @@ def get_prompt_from_gtmask(mask, deterministic=False):
 
 
 def downsample_mask(mask, target_dim):
-    mask_down = F.interpolate(mask.unsqueeze(1).float(), size=(target_dim[0], target_dim[1]), mode="nearest").squeeze(1)
+    mask_down = F.interpolate(mask.float(), size=(target_dim[0], target_dim[1]), mode="nearest")
     return mask_down
 
 

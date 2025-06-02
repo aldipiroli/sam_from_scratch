@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from model.loss_functions import compute_iou_between_masks
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils.misc import downsample_mask, get_device, get_prompt_from_gtmask, get_simple_data, plot_mask_predictions
+from utils.misc import downsample_mask, get_device, get_prompt_from_gtmask, plot_mask_predictions
 
 
 class Trainer:
@@ -99,16 +99,17 @@ class Trainer:
         self.logger.info(f"Loss function {self.loss_fn}")
 
     def prepare_inputs(self, gt_masks, deterministic=False):
-        selected_prompts, selected_masks, selected_classes = get_prompt_from_gtmask(
+        selected_prompts, prompt_gt_mask, selected_classes = get_prompt_from_gtmask(
             gt_masks, deterministic=deterministic
         )
         selected_prompts = selected_prompts.float().to(self.device)
-        selected_masks = selected_masks.to(self.device)
+        prompt_gt_mask = prompt_gt_mask.to(self.device)
+        prompt_gt_mask = prompt_gt_mask.unsqueeze(1)  # (b, 1, h, w)
 
         selected_prompts_norm = torch.zeros_like(selected_prompts)
         selected_prompts_norm[..., 0] = selected_prompts[..., 0] / self.img_size[1]
         selected_prompts_norm[..., 1] = selected_prompts[..., 1] / self.img_size[2]
-        return selected_prompts_norm, selected_masks
+        return selected_prompts_norm, prompt_gt_mask
 
     def postprocessor(self, mask_pred, iou_pred, apply_threshold=False):
         mask_pred = torch.sigmoid(mask_pred)
@@ -140,7 +141,7 @@ class Trainer:
 
                 prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks)
                 pred_masks, pred_ious = self.model(data, prompts_norm)
-                loss = self.loss_fn(prompt_gt_masks, pred_masks, pred_ious)
+                loss = self.loss_fn(gt_masks=prompt_gt_masks, pred_masks=pred_masks, pred_iou=pred_ious)
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix({"loss": loss.item()})
@@ -165,27 +166,28 @@ class Trainer:
 
             # compute iou eval
             gt_masks_down = downsample_mask(all_gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-1]))
-            actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), pred_masks)
+            actual_iou = compute_iou_between_masks(gt_masks_down, pred_masks)
             all_iou.append(actual_iou)
             if n_iter < max_plot_iter:
                 self.plot_predictions(
-                    all_gt_masks,
-                    pred_masks,
-                    data,
-                    prompt_gt_masks,
-                    pred_ious,
-                    prompts_norm,
+                    all_gt_masks=all_gt_masks,
+                    prompt_gt_masks=prompt_gt_masks,
+                    data=data,
+                    pred_masks=pred_masks,
+                    pred_ious=pred_ious,
+                    prompts_norm=prompts_norm,
                     batch_id=0,
                     i=n_iter,
                 )
+
         self.logger.info(f"Epoch {self.epoch} avg IoU {torch.mean(torch.tensor(all_iou)).item():.2f}")
         self.model.train()
 
     def overfit_one_batch(self):
         self.model.train()
         it = iter(self.train_loader)
-        # data, gt_masks = next(it)
-        data, all_gt_masks = get_simple_data(1, 224, 224)
+        data, all_gt_masks = next(it)
+        # data, all_gt_masks = get_simple_data(1, 224, 224)
         for i in range(1000000):
             self.optimizer.zero_grad()
             data = data.to(self.device)
@@ -193,14 +195,21 @@ class Trainer:
 
             prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks, deterministic=True)
             pred_masks, pred_ious = self.model(data, prompts_norm)
-            loss = self.loss_fn(prompt_gt_masks, pred_masks, pred_ious)
+            loss = self.loss_fn(gt_masks=prompt_gt_masks, pred_masks=pred_masks, pred_ious=pred_ious)
             print(f"Loss {loss.item():.6f}")
             loss.backward()
             self.optimizer.step()
             if (i % 10) == 0:
-                pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious, apply_threshold=True)
+                # pred_masks, pred_ious = self.postprocessor(pred_masks, pred_ious, apply_threshold=True)
                 self.plot_predictions(
-                    all_gt_masks, pred_masks, data, prompt_gt_masks, pred_ious, prompts_norm, batch_id=0, i=0
+                    all_gt_masks=all_gt_masks,
+                    prompt_gt_masks=prompt_gt_masks,
+                    data=data,
+                    pred_masks=pred_masks,
+                    pred_ious=pred_ious,
+                    prompts_norm=prompts_norm,
+                    batch_id=0,
+                    i=0,
                 )
 
         self.save_checkpoint()
@@ -223,17 +232,18 @@ class Trainer:
         assert len(no_grad_name) == 0
 
     def plot_predictions(
-        self, gt_masks, prompt_gt_masks, data, selected_masks, pred_ious, prompts_norm, batch_id=0, i=0
+        self, all_gt_masks, prompt_gt_masks, data, pred_masks, pred_ious, prompts_norm, batch_id=0, i=0
     ):
-        gt_masks_down = downsample_mask(gt_masks, target_dim=(prompt_gt_masks.shape[-1], prompt_gt_masks.shape[-1]))
-        actual_iou = compute_iou_between_masks(gt_masks_down.unsqueeze(1), prompt_gt_masks)
+        prompt_gt_masks_down = downsample_mask(prompt_gt_masks, target_dim=(pred_masks.shape[-1], pred_masks.shape[-2]))
+        actual_iou = compute_iou_between_masks(prompt_gt_masks_down, pred_masks)
         plot_mask_predictions(
-            data[batch_id],
-            gt_masks[batch_id],
-            selected_masks[batch_id],
-            prompt_gt_masks[batch_id],
-            pred_ious[batch_id],
-            actual_iou[batch_id],
-            prompt=prompts_norm[batch_id, 0],
+            image=data[batch_id],
+            all_gt_masks=all_gt_masks[batch_id],
+            prompt_gt_masks=prompt_gt_masks[batch_id],
+            prompt_gt_masks_down=prompt_gt_masks_down[batch_id],
+            pred_masks=pred_masks[batch_id],
+            pred_ious=pred_ious[batch_id],
+            actual_iou=actual_iou[batch_id],
+            prompt=prompts_norm[batch_id],
             filename=f"{self.artifacts_img_dir}/tmp_{str(i).zfill(4)}.png",
         )
