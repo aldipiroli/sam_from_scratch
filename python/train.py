@@ -14,7 +14,7 @@ def train():
     model_cfg = config["MODEL"]
     model = SAM(
         embed_size=model_cfg["embed_size"],
-        num_output_tokens=model_cfg["num_output_tokens"],
+        num_output_masks=model_cfg["num_output_masks"],
         num_decoder_layers=model_cfg["num_decoder_layers"],
         num_frequencies=model_cfg["num_frequencies"],
         dropout=model_cfg["dropout"],

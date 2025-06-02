@@ -180,10 +180,11 @@ class MaskDecoderLayer(nn.Module):
 
 
 class MaskDecoder(nn.Module):
-    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, num_output_tokens=4):
+    def __init__(self, num_decoder_layers=2, embed_size=256, dropout=0.1, num_output_masks=3, num_output_tokens=4):
         super(MaskDecoder, self).__init__()
         self.resulting_patch_size = 14  # h//patch_size (based on ViTB16)
         self.embed_size = embed_size
+        self.num_output_masks = num_output_masks
         self.num_output_tokens = num_output_tokens
         self.decoder_layers = torch.nn.ModuleList(
             [MaskDecoderLayer(embed_size=embed_size, dropout=dropout) for _ in range(num_decoder_layers)]
@@ -203,7 +204,7 @@ class MaskDecoder(nn.Module):
             nn.Linear(embed_size, embed_size),
         )
 
-        self.mlp_iou = nn.Sequential(nn.Linear(embed_size, self.num_output_tokens))
+        self.mlp_iou = nn.Sequential(nn.Linear(embed_size, self.num_output_masks))
 
     def forward(self, tokens, img_embed):
         for curr_decoder in self.decoder_layers:
@@ -224,15 +225,14 @@ class MaskDecoder(nn.Module):
             in_v=img_embed,
         )
         token_to_img_res += tokens
-        mask_token = token_to_img_res[:, : self.num_output_tokens, :]
+        mask_token = token_to_img_res[:, : self.num_output_masks, :]
         mask_token = self.mlp_mask(mask_token)
         masks = torch.matmul(mask_token, img_embed_upsample_reshape)
         masks_reshape = masks.reshape(
-            b, self.num_output_tokens, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4)
+            b, self.num_output_masks, (self.resulting_patch_size * 4), (self.resulting_patch_size * 4)
         )
         iou_token = token_to_img_res[:, self.num_output_tokens, :]
         iou = self.mlp_iou(iou_token)
-        iou = nn.functional.softmax(iou)
 
         # TODO: handle single/multi prompt cases
         return masks_reshape, iou
@@ -256,23 +256,25 @@ class SAM(nn.Module):
     def __init__(
         self,
         embed_size=256,
-        num_output_tokens=1,
+        num_output_masks=1,
         num_decoder_layers=1,
         num_frequencies=1,
         dropout=0.1,
     ):
         super(SAM, self).__init__()
         self.embed_size = embed_size
-        self.num_output_tokens = num_output_tokens
+        self.num_output_masks = num_output_masks
+        self.num_output_tokens = num_output_masks + 1  # iou token
         self.image_encoder = ImageEncoder(frozen=True, target_embed_size=embed_size)
         self.prompt_encoder = PointPromptEconder(embed_size=embed_size, num_frequencies=num_frequencies)
-        self.output_token = nn.parameter.Parameter(data=torch.zeros(1, num_output_tokens, 1))
+        self.output_token = nn.parameter.Parameter(data=torch.zeros(1, self.num_output_tokens, 1))
 
         self.mask_decoder = MaskDecoder(
             num_decoder_layers=num_decoder_layers,
             embed_size=embed_size,
             dropout=dropout,
-            num_output_tokens=num_output_tokens,
+            num_output_tokens=self.num_output_tokens,
+            num_output_masks=self.num_output_masks,
         )
 
     def forward(self, img, prompt):

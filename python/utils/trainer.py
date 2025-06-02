@@ -196,7 +196,7 @@ class Trainer:
             prompts_norm, prompt_gt_masks = self.prepare_inputs(all_gt_masks, deterministic=False)
             pred_masks, pred_ious = self.model(data, prompts_norm)
             loss = self.loss_fn(gt_masks=prompt_gt_masks, pred_masks=pred_masks, pred_ious=pred_ious)
-            print(f"Loss {loss.item():.6f}")
+            # print(f"Loss {loss.item():.6f}")
             loss.backward()
             self.optimizer.step()
             if (i % 10) == 0:

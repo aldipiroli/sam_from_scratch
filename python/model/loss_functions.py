@@ -48,10 +48,10 @@ class SAMLoss(nn.Module):
         min_bce_loss, _ = bce_losses.min(dim=1)  # (b,)
 
         # iou loss
-        mse_loss_fn = nn.MSELoss()
+        mse_loss_fn = nn.MSELoss(reduction="none")
         iou_gt_pred = compute_iou_between_masks(gt_masks, pred_masks)
         iou_loss = mse_loss_fn(iou_gt_pred, pred_ious)
-
+        print(f"min_bce_loss: {min_bce_loss.sum():.6f}, iou_loss: {iou_loss.sum():.4f}")
         tot_loss = (min_bce_loss.sum() * self.loss_weights["mask_pred_loss_weight"]) + (
             iou_loss.sum() * self.loss_weights["iou_loss_weight"]
         )
