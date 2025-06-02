@@ -23,10 +23,10 @@ def test_get_prompt_from_gtmask():
 def test_mask_downsampling():
     b = 2
     target_h, target_w = 56, 56
-    mask = torch.zeros(b, 244, 244)
-    mask[:, :50, :50] = 1
+    mask = torch.zeros(b, 1, 244, 244)
+    mask[:, :, :50, :50] = 1
     mask_down = downsample_mask(mask, (target_h, target_w))
-    assert mask_down.shape == (b, target_h, target_w)
+    assert mask_down.shape == (b, 1, target_h, target_w)
 
 
 if __name__ == "__main__":

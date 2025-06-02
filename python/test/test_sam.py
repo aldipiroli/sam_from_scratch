@@ -106,26 +106,34 @@ def test_mask_decoder():
     num_prompts = 1
     resulting_patch_size = 14
     upscale_factor = 4
-    num_output_tokens = 4
-    mask_decoder = MaskDecoder(num_decoder_layers=2, embed_size=256, dropout=0.1)
+    num_output_masks = 3
+    num_iou_tokens = 1
+    num_output_tokens = num_output_masks + num_iou_tokens
+    mask_decoder = MaskDecoder(
+        num_decoder_layers=2,
+        embed_size=256,
+        dropout=0.1,
+        num_output_masks=num_output_masks,
+        num_output_tokens=num_output_tokens,
+    )
 
     tokens = torch.randn(b, num_prompts + 4, d, requires_grad=True)
     img_embed = torch.randn(b, n, d, requires_grad=True)
     masks, iou = mask_decoder(tokens, img_embed)
     assert masks.shape == (
         b,
-        num_output_tokens,
+        num_output_masks,
         (resulting_patch_size * upscale_factor),
         (resulting_patch_size * upscale_factor),
     )
-    assert iou.shape == (b, num_output_tokens)
+    assert iou.shape == (b, num_output_masks)
     assert masks.requires_grad
     assert iou.requires_grad
 
 
 def test_sam():
-    num_output_tokens = 4
-    sam = SAM(num_output_tokens=num_output_tokens)
+    num_output_masks = 3
+    sam = SAM(num_output_masks=num_output_masks)
     b, c, h, w = 2, 3, 224, 224
     num_prompts = 1
     resulting_patch_size = 14
@@ -136,11 +144,11 @@ def test_sam():
     masks, iou = sam(img, prompt)
     assert masks.shape == (
         b,
-        num_output_tokens,
+        num_output_masks,
         (resulting_patch_size * upscale_factor),
         (resulting_patch_size * upscale_factor),
     )
-    assert iou.shape == (b, num_output_tokens)
+    assert iou.shape == (b, num_output_masks)
     assert masks.requires_grad
     assert iou.requires_grad
 
