@@ -157,8 +157,6 @@ def plot_mask_predictions(
 
     ax3 = fig.add_subplot(gs[0, 3])
     im_gt = ax3.imshow(prompt_gt_masks_down.squeeze(0), cmap="viridis")
-    if prompt is not None:
-        ax3.plot(px, py, "x", markersize=10, color="red")
     ax3.set_title("Prompt GT Mask Downsample")
     ax3.axis("off")
     fig.colorbar(im_gt, ax=ax3)

@@ -232,6 +232,7 @@ class MaskDecoder(nn.Module):
         )
         iou_token = token_to_img_res[:, self.num_output_tokens, :]
         iou = self.mlp_iou(iou_token)
+        iou = nn.functional.softmax(iou)
 
         # TODO: handle single/multi prompt cases
         return masks_reshape, iou
