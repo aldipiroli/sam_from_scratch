@@ -55,13 +55,13 @@ class SAMLoss(nn.Module):
         return tot_loss.mean()
 
 
-def compute_iou_between_masks(gt_mask, pred_masks):
+def compute_iou_between_masks(gt_mask, pred_masks, threshold=0.5):
+    pred_mask_binary = (pred_masks > threshold).bool()
     gt_mask = gt_mask.bool()
-    pred_masks = pred_masks.bool()
 
-    gt_mask_exp = gt_mask.expand(-1, pred_masks.shape[0], -1, -1)
-    intersection = (gt_mask_exp & pred_masks).sum(dim=(2, 3)).float()  # (B, N)
-    union = (gt_mask_exp | pred_masks).sum(dim=(2, 3)).float()  # (B, N)
+    gt_mask_exp = gt_mask.expand(-1, pred_mask_binary.shape[0], -1, -1)
+    intersection = (gt_mask_exp & pred_mask_binary).sum(dim=(2, 3)).float()  # (B, N)
+    union = (gt_mask_exp | pred_mask_binary).sum(dim=(2, 3)).float()  # (B, N)
 
     # Avoid division by zero
     iou = intersection / (union + 1e-6)
