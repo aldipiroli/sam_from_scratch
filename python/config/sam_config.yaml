@@ -13,7 +13,7 @@ MODEL:
     iou_loss_weight: 0.1
 DATA:
   root: "../data"
-  batch_size: 1
+  batch_size: 128
 OPTIM:
   optimizer: "AdamW"
   lr: 0.0001
